@@ -1,0 +1,41 @@
+### git's track ignore file-list.
+### vim tempfile
+.*.swp
+tags
+cscope.in.out
+cscope.out
+cscope.po.out
+
+### Source Insight
+*.IAB
+*.IAD
+*.IMB
+*.IMD
+*.PFI
+*.PO
+*.PR
+*.PRI
+*.PS
+*.WK3
+*.SearchResults
+
+### SlickEdit
+*.vpwhist
+*.vtg
+*.vpj
+*.vpw
+
+!.gitignore
+!.gitmodules
+
+# Other ignore the trace files
+*.o
+#*.a
+#*.bak
+#*~
+#*.so
+#*.log
+#*.gz
+#*.bz2
+udpcli
+
