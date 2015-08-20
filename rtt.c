@@ -1,5 +1,8 @@
 /* include rtt1 */
-#include	"unprtt.h"
+#include "unprtt.h"
+#include "wrapfunc.h"
+#include <stdlib.h>
+#include <stdio.h>
 
 int		rtt_d_flag = 0;		/* debug flag; can be set by caller */
 
@@ -129,7 +132,7 @@ rtt_debug(struct rtt_info *ptr)
 	if (rtt_d_flag == 0)
 		return;
 
-	fprintf(stderr, "rtt = %.3f, srtt = %.3f, rttvar = %.3f, rto = %.3f\n",
+	fprintf(stderr, "\e[31mrtt = %.3f, srtt = %.3f, rttvar = %.3f, rto = %.3f\n\e[m",
 			ptr->rtt_rtt, ptr->rtt_srtt, ptr->rtt_rttvar, ptr->rtt_rto);
 	fflush(stderr);
 }

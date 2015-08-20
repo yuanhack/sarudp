@@ -1,5 +1,11 @@
 #include "sarudp.h"
-#include	"unp.h"
+#include "wrapfunc.h"
+
+#include <stdio.h>
+
+#ifndef MAXLINE
+#define MAXLINE     4096    /* max text line length */
+#endif
 
 void
 sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen)
@@ -8,8 +14,6 @@ sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen)
 	char	sendline[MAXLINE], recvline[MAXLINE + 1];
 
     do {
-        fprintf(stdout, "---- input: "); 
-        fflush(stdout);
         if (Fgets(sendline, MAXLINE, fp) == NULL) {
             fprintf(stdout, "\n");
             return ;
@@ -19,7 +23,7 @@ sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen)
                 recvline, MAXLINE, pservaddr, servlen);
 
         recvline[n] = 0;	/* null terminate */
-        fprintf(stdout, "---- echo : %s", recvline); 
+        fprintf(stdout, "\e[32m%s\e[m", recvline); 
         fflush(stdout);
     } while (1);
 }

@@ -1,33 +1,66 @@
 #include "sarudp.h"
-#include <setjmp.h>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 
 
 #define RTT_DEBUG
 
 //static struct rtt_info   rttinfo;
-struct msghdr	msgsend, msgrecv;	/* assumed init to 0 */
-
-static sigjmp_buf jmpbuf;
-
-int sarudp_init(sarudpmgr_t *psar, int family, int flag)
+int setfd_nonblock(int fd)    
 {
-    psar->fd = Socket(family, SOCK_DGRAM, flag);
+    int status;
+    if ((status = fcntl(fd, F_GETFL)) < 0) { 
+        err_ret("setfd_nonblock() fcntl F_GETFL error[%d]", errno); 
+        return -1; 
+    }  
+    status |= O_NONBLOCK;     
+    if (fcntl(fd, F_SETFL, status) < 0) { 
+        err_ret("setfd_nonblock() fcntl F_SETFL error[%d]", errno); 
+        return -1;            
+    }  
+    return 0;                 
+}
+void Setfd_nonblock(int fd)
+{
+    if ( setfd_nonblock(fd) < 0 ) 
+        exit(1);
+}
+
+int sarudp_create(sarudpmgr_t *psar, int family, int flag)
+{
+    psar->fd = socket(family, SOCK_DGRAM, flag);
     if (psar->fd < 0) 
         return -1;
+
     psar->rttinit = 0;
-    sarudp_reset_seq(psar);
+    psar->sendhdr.seq = 0;
+	psar->sendhdr.flag[0] = 0;
+	psar->sendhdr.flag[1] = 0xfa;
+    Setfd_nonblock(psar->fd);
+    pthread_mutex_init(&psar->lock, 0);
+
     return 0;
 }
-static void
-sig_alrm(int signo)
+
+void serudp_destroy(sarudpmgr_t *psar)
 {
-   siglongjmp(jmpbuf, 1);
+    if (psar->fd >= 0) { 
+        close(psar->fd); 
+        psar->fd = -1; 
+        return;
+    }
+    pthread_mutex_destroy(&psar->lock);
 }
 
-void sarudp_reset_seq(sarudpmgr_t *psar)
+void sarudp_seq_set(sarudpmgr_t *psar, int seq)
 {
-    psar->sendhdr.seq = 0;
+    pthread_mutex_lock(&psar->lock);
+    psar->sendhdr.seq = seq;
+    pthread_mutex_unlock(&psar->lock);
 }
+
 ssize_t
 sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
 			 void *inbuff, size_t inbytes,
@@ -35,15 +68,18 @@ sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
 {
 	ssize_t			n;
 	struct iovec	iovsend[2], iovrecv[2];
+    struct msghdr	msgsend = {0}, msgrecv = {0};	/* assumed init to 0 */
+    fd_set set;
+    int ret, waitsec;
+
     rtt_d_flag = 1;
 
+    pthread_mutex_lock(&psar->lock);
     if (psar->rttinit == 0) {
-        rtt_init(&psar->rttinfo);
+        rtt_init(&psar->rttinfo);       /* first time we're called */
         psar->rttinit = 1;
     }
 
-	psar->sendhdr.flag[0] = 0;
-	psar->sendhdr.flag[1] = 0xfa;
 	psar->sendhdr.seq++;
 	msgsend.msg_name = (void*)destaddr;
 	msgsend.msg_namelen = destlen;
@@ -64,45 +100,83 @@ sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
 	iovrecv[1].iov_base = inbuff;
 	iovrecv[1].iov_len = inbytes;
 
-    Signal(SIGALRM, sig_alrm);
+
+    struct timeval tv, selectbegin, selectend;
+
 	rtt_newpack(&psar->rttinfo);		/* initialize for this packet */
 
 sendagain:
-#ifdef	RTT_DEBUG
-	fprintf(stderr, "send %4d: ", psar->sendhdr.seq);
-#endif
 	psar->sendhdr.ts = rtt_ts(&psar->rttinfo);
 	Sendmsg(psar->fd, &msgsend, 0);
 
-	alarm(rtt_start(&psar->rttinfo));	/* calc timeout value & start timer */
+    waitsec  = rtt_start(&psar->rttinfo);	/* calc timeout value & start timer */
 #ifdef	RTT_DEBUG
+	fprintf(stderr, "\e[31msend seq %4d: \e[m", psar->sendhdr.seq);
 	rtt_debug(&psar->rttinfo);
 #endif
 
-	if (sigsetjmp(jmpbuf, 1) != 0) {
-		if (rtt_timeout(&psar->rttinfo) < 0) {
-			err_msg("dg_send_recv: no response from server, giving up");
-			psar->rttinit = 0;	/* reinit in case we're called again */
-			errno = ETIMEDOUT;
-			return(-1);
-		}
-#ifdef	RTT_DEBUG
-		err_msg("dg_send_recv: timeout, retransmitting");
-#endif
-		goto sendagain;
-	}
+//    struct timeval tv;
+//    gettimeofday(&tv, 0);  /* calc select system call EINTR time */
+//	fprintf(stderr, "rtt = %.3f, srtt = %.3f, rttvar = %.3f, rto = %.3f time=%0ld.%0ld\n",
+//			ptr->rtt_rtt, ptr->rtt_srtt, ptr->rtt_rttvar, ptr->rtt_rto,
+//            tv.tv_sec, tv.tv_usec);
 
-	do {
-		n = Recvmsg(psar->fd, &msgrecv, 0);
-#ifdef	RTT_DEBUG
-		fprintf(stderr, "recv %4d\n", psar->recvhdr.seq);
-#endif
-	} while (n < sizeof(struct hdr) || psar->recvhdr.seq != psar->sendhdr.seq);
+    for (;;) {
+        tv.tv_sec = waitsec;	/* calc timeout value & start timer */
+        tv.tv_usec = 0;
+        FD_ZERO(&set);
+        FD_SET(psar->fd, &set);
 
-	alarm(0);			/* stop SIGALRM timer */
+        gettimeofday(&selectbegin, 0);  /* calc select system call EINTR time */
+eintr:
+        ret = select(psar->fd+1, &set, 0, 0, &tv);
+        if (ret < 0) {
+            if (errno == EINTR) {
+                /* calc next select block time if system call EINTR */
+                gettimeofday(&selectend, 0);
+                tv.tv_sec = tv.tv_sec - (selectend.tv_sec - selectbegin.tv_sec);
+                tv.tv_usec = tv.tv_usec - (selectend.tv_usec - selectbegin.tv_usec);
+                err_msg("select EINTR, calc the next Waiting-Blocking time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+                goto eintr;
+            }
+            err_ret("select error");
+        } else if (ret == 0) {
+            if (rtt_timeout(&psar->rttinfo) < 0) {
+                err_msg("\e[33mno response from server, giving up\e[m");
+                psar->rttinit = 0;	/* reinit in case we're called again */
+                errno = ETIMEDOUT;
+                pthread_mutex_unlock(&psar->lock);
+                return(-1);
+            }
+#ifdef	RTT_DEBUG
+            err_msg("\e[31m     seq %4d timeout, retransmitting\e[m", psar->sendhdr.seq);
+#endif
+            goto sendagain;
+        } 
+        if (FD_ISSET(psar->fd, &set)) {
+            do { 
+                n = recvmsg(psar->fd, &msgrecv, 0);
+                if (n < 0 && errno == EAGAIN) {
+#ifdef	RTT_DEBUG
+                    fprintf(stderr, "recvmsg EAGAIN\n");
+#endif
+                    break;
+                }
+#ifdef	RTT_DEBUG
+                fprintf(stderr, "\e[31mrecv seq %4d: \e[m\n", psar->recvhdr.seq);
+                //rtt_debug(&psar->rttinfo);
+#endif
+                if(n >= sizeof(struct hdr) && psar->recvhdr.seq == psar->sendhdr.seq)
+                    goto finish;  /* finish matching receive */
+            } while (1);
+        }
+    }
+finish:
+
 		/* 4calculate & store new RTT estimator values */
 	rtt_stop(&psar->rttinfo, rtt_ts(&psar->rttinfo) - psar->recvhdr.ts);
 
+    pthread_mutex_unlock(&psar->lock);
 	return(n - sizeof(struct hdr));	/* return size of received datagram */
 }
 

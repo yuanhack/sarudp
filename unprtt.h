@@ -1,7 +1,8 @@
 #ifndef	__unp_rtt_h
 #define	__unp_rtt_h
 
-#include	"unp.h"
+#include <stdint.h>
+#include <sys/types.h>
 
 struct rtt_info {
   float		rtt_rtt;	/* most recent measured RTT, seconds */
