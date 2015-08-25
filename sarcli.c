@@ -19,8 +19,10 @@ sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen)
             return ;
         }
 
-        n = Sarudp_send_recv(psar, sendline, strlen(sendline),
+        n = sarudp_send_recv(psar, sendline, strlen(sendline),
                 recvline, MAXLINE, pservaddr, servlen);
+        if (n < 0)
+            err_quit("sarudp_send_recv error");
 
         recvline[n] = 0;	/* null terminate */
         fprintf(stdout, "\e[32m%s\e[m", recvline); 

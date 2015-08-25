@@ -40,7 +40,7 @@ ssize_t sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes
         void *inbuff, size_t inbytes,
         const SA *destaddr, socklen_t destlen);
 
-ssize_t Sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
+ssize_t sarudp_send_recv_retry(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
         void *inbuff, size_t inbytes,
         const SA *destaddr, socklen_t destlen);
 

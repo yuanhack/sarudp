@@ -4,10 +4,6 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
-
-#define RTT_DEBUG
-
-//static struct rtt_info   rttinfo;
 int setfd_nonblock(int fd)    
 {
     int status;
@@ -36,8 +32,8 @@ int sarudp_create(sarudpmgr_t *psar, int family, int flag)
 
     psar->rttinit = 0;
     psar->sendhdr.seq = 0;
-	psar->sendhdr.flag[0] = 0;
-	psar->sendhdr.flag[1] = 0xfa;
+    psar->sendhdr.flag[0] = 0;
+    psar->sendhdr.flag[1] = 0xfa;
     Setfd_nonblock(psar->fd);
     pthread_mutex_init(&psar->lock, 0);
 
@@ -61,13 +57,12 @@ void sarudp_seq_set(sarudpmgr_t *psar, int seq)
     pthread_mutex_unlock(&psar->lock);
 }
 
-ssize_t
-sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
-			 void *inbuff, size_t inbytes,
-			 const SA *destaddr, socklen_t destlen)
+ssize_t sarudp_send_recv_act(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes,
+        const SA *destaddr, socklen_t destlen, int retransmit)
 {
-	ssize_t			n;
-	struct iovec	iovsend[2], iovrecv[2];
+    ssize_t			n;
+    struct iovec	iovsend[2], iovrecv[2];
     struct msghdr	msgsend = {0}, msgrecv = {0};	/* assumed init to 0 */
     fd_set set;
     int ret, waitsec;
@@ -80,46 +75,40 @@ sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
         psar->rttinit = 1;
     }
 
-	psar->sendhdr.seq++;
-	msgsend.msg_name = (void*)destaddr;
-	msgsend.msg_namelen = destlen;
-	msgsend.msg_iov = iovsend;
-	msgsend.msg_iovlen = 2;
+    if (retransmit == 0)
+        psar->sendhdr.seq++;
+    msgsend.msg_name = (void*)destaddr;
+    msgsend.msg_namelen = destlen;
+    msgsend.msg_iov = iovsend;
+    msgsend.msg_iovlen = 2;
 
-	iovsend[0].iov_base = &psar->sendhdr;
-	iovsend[0].iov_len = sizeof(struct hdr);
-	iovsend[1].iov_base = (void*)outbuff;
-	iovsend[1].iov_len = outbytes;
+    iovsend[0].iov_base = &psar->sendhdr;
+    iovsend[0].iov_len = sizeof(struct hdr);
+    iovsend[1].iov_base = (void*)outbuff;
+    iovsend[1].iov_len = outbytes;
 
-	msgrecv.msg_name = NULL;
-	msgrecv.msg_namelen = 0;
-	msgrecv.msg_iov = iovrecv;
-	msgrecv.msg_iovlen = 2;
-	iovrecv[0].iov_base = &psar->recvhdr;
-	iovrecv[0].iov_len = sizeof(struct hdr);
-	iovrecv[1].iov_base = inbuff;
-	iovrecv[1].iov_len = inbytes;
-
+    msgrecv.msg_name = NULL;
+    msgrecv.msg_namelen = 0;
+    msgrecv.msg_iov = iovrecv;
+    msgrecv.msg_iovlen = 2;
+    iovrecv[0].iov_base = &psar->recvhdr;
+    iovrecv[0].iov_len = sizeof(struct hdr);
+    iovrecv[1].iov_base = inbuff;
+    iovrecv[1].iov_len = inbytes;
 
     struct timeval tv, selectbegin, selectend;
 
-	rtt_newpack(&psar->rttinfo);		/* initialize for this packet */
+    rtt_newpack(&psar->rttinfo);		/* initialize for this packet */
 
 sendagain:
-	psar->sendhdr.ts = rtt_ts(&psar->rttinfo);
-	Sendmsg(psar->fd, &msgsend, 0);
+    psar->sendhdr.ts = rtt_ts(&psar->rttinfo);
+    Sendmsg(psar->fd, &msgsend, 0);
 
     waitsec  = rtt_start(&psar->rttinfo);	/* calc timeout value & start timer */
 #ifdef	RTT_DEBUG
-	fprintf(stderr, "\e[31msend seq %4d: \e[m", psar->sendhdr.seq);
-	rtt_debug(&psar->rttinfo);
+    fprintf(stderr, "\e[31msend seq %4d: \e[m", psar->sendhdr.seq);
+    rtt_debug(&psar->rttinfo);
 #endif
-
-//    struct timeval tv;
-//    gettimeofday(&tv, 0);  /* calc select system call EINTR time */
-//	fprintf(stderr, "rtt = %.3f, srtt = %.3f, rttvar = %.3f, rto = %.3f time=%0ld.%0ld\n",
-//			ptr->rtt_rtt, ptr->rtt_srtt, ptr->rtt_rttvar, ptr->rtt_rto,
-//            tv.tv_sec, tv.tv_usec);
 
     for (;;) {
         tv.tv_sec = waitsec;	/* calc timeout value & start timer */
@@ -132,11 +121,14 @@ eintr:
         ret = select(psar->fd+1, &set, 0, 0, &tv);
         if (ret < 0) {
             if (errno == EINTR) {
-                /* calc next select block time if system call EINTR */
+                /* calc next select block time if system interrupt */
                 gettimeofday(&selectend, 0);
+                /* Simplified calculation, maximum deviation within 1 second for wait recv */
                 tv.tv_sec = tv.tv_sec - (selectend.tv_sec - selectbegin.tv_sec);
-                tv.tv_usec = tv.tv_usec - (selectend.tv_usec - selectbegin.tv_usec);
-                err_msg("select EINTR, calc the next Waiting-Blocking time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+                tv.tv_usec = abs(tv.tv_usec - (selectend.tv_usec - selectbegin.tv_usec));  
+#ifdef	RTT_DEBUG
+                err_msg("select interrupt, the next Waiting-Blocking time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+#endif
                 goto eintr;
             }
             err_ret("select error");
@@ -166,31 +158,32 @@ eintr:
                 fprintf(stderr, "\e[31mrecv seq %4d: \e[m\n", psar->recvhdr.seq);
                 //rtt_debug(&psar->rttinfo);
 #endif
-                if(n >= sizeof(struct hdr) && psar->recvhdr.seq == psar->sendhdr.seq)
+                if(n >= sizeof(struct hdr) && psar->recvhdr.seq == psar->sendhdr.seq && 
+                        psar->recvhdr.flag[0] == 0 && psar->recvhdr.flag[1] == 0xfa)
                     goto finish;  /* finish matching receive */
             } while (1);
         }
     }
 finish:
 
-		/* 4calculate & store new RTT estimator values */
-	rtt_stop(&psar->rttinfo, rtt_ts(&psar->rttinfo) - psar->recvhdr.ts);
+    /* 4calculate & store new RTT estimator values */
+    rtt_stop(&psar->rttinfo, rtt_ts(&psar->rttinfo) - psar->recvhdr.ts);
 
     pthread_mutex_unlock(&psar->lock);
-	return(n - sizeof(struct hdr));	/* return size of received datagram */
+    return(n - sizeof(struct hdr));	/* return size of received datagram */
 }
 
-ssize_t
-Sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
-			 void *inbuff, size_t inbytes,
-			 const SA *destaddr, socklen_t destlen)
+
+ssize_t sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes,
+        const SA *destaddr, socklen_t destlen)
 {
-	ssize_t	n;
-
-	n = sarudp_send_recv(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen);
-	if (n < 0)
-		err_quit("dg_send_recv error");
-
-	return(n);
+    return sarudp_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen, 0);
+}
+ssize_t sarudp_send_recv_retry(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes,
+        const SA *destaddr, socklen_t destlen)
+{
+    return sarudp_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen, 1);
 }
 

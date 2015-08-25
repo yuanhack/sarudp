@@ -1,5 +1,6 @@
 #include "wrapfunc.h"
 #include "error.h"
+#include "sarudp.h"
 
 #include <stdio.h>
 #include <arpa/inet.h>
@@ -61,4 +62,17 @@ Sendmsg(int fd, const struct msghdr *msg, int flags)
 
     if (sendmsg(fd, msg, flags) != nbytes)
         err_sys("sendmsg error");
+}
+
+ssize_t Sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes,
+        const SA *destaddr, socklen_t destlen)
+{
+    ssize_t	n;
+
+    n = sarudp_send_recv(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen);
+    if (n < 0)
+        err_quit("sarudp_send_recv error");
+
+    return(n);
 }

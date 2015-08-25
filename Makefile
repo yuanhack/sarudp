@@ -4,6 +4,8 @@ CFLAGS = -g -O2 -D_REENTRANT -Wall
 LIBS = -lpthread
 RANLIB = ranlib
 
+CFLAGS += -DRTT_DEBUG
+
 CLEANFILES = core core.* *.core *.o temp.* *.out typescript* \
 		*.lc *.lh *.bsdi *.sparc *.uw
 
