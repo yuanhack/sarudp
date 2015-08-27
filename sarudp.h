@@ -20,6 +20,11 @@ struct hdr {
 };
 #pragma pack(pop)
 
+typedef struct sockaddr     SA;
+typedef struct sockaddr_in  SAI;
+typedef struct sarudpmgr sarudpmgr_t;
+typedef void sarudpin(sarudpmgr_t *ps, char* buff, int len);
+
 // SYN/ACK Retransfer manager
 typedef struct sarudpmgr {
     pthread_mutex_t lock;
@@ -27,13 +32,13 @@ typedef struct sarudpmgr {
     struct hdr sendhdr;
     struct hdr recvhdr;
     struct rtt_info rttinfo;
+    sarudpin* in;
     int rttinit;
 } sarudpmgr_t;
 
-typedef struct sockaddr_in  SAI;
-typedef struct sockaddr     SA;
 
-int sarudp_create(sarudpmgr_t *psar, int family, int flag);
+//int sarudp_create(sarudpmgr_t *psar, int family, int flag);
+int sarudp_create(sarudpmgr_t *psar, int family, int flag, sarudpin *in);
 int sarudp_destroy(sarudpmgr_t *psar);
 
 ssize_t sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,

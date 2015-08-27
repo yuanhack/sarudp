@@ -3,9 +3,14 @@
 #include "domain_parse.h"
 #include "wrapfunc.h"
 
-void
-sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen);
+void sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen);
 
+void udpin(sarudpmgr_t *pin, char *buff, int len)
+{
+    if (len > 0)
+        printf("recv svr len %d info %s\n", len, buff);
+}
+  
 int
 main(int argc, char **argv)
 {
@@ -26,7 +31,7 @@ main(int argc, char **argv)
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 
-    if (sarudp_create((sarudpmgr_t*)&sar, AF_INET, 0) < 0)
+    if (sarudp_create((sarudpmgr_t*)&sar, AF_INET, 0, udpin) < 0)
         err_quit("sarudp_init error");
 
 	sar_cli(stdin, &sar, (SA *) &servaddr, sizeof(servaddr));

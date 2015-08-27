@@ -24,7 +24,8 @@ void Setfd_nonblock(int fd)
         exit(1);
 }
 
-int sarudp_create(sarudpmgr_t *psar, int family, int flag)
+
+int sarudp_create(sarudpmgr_t *psar, int family, int flag, sarudpin* in)
 {
     psar->fd = socket(family, SOCK_DGRAM, flag);
     if (psar->fd < 0) 
@@ -34,6 +35,7 @@ int sarudp_create(sarudpmgr_t *psar, int family, int flag)
     psar->sendhdr.seq = 0;
     psar->sendhdr.flag[0] = 0;
     psar->sendhdr.flag[1] = 0xfa;
+    psar->in = in;
     Setfd_nonblock(psar->fd);
     pthread_mutex_init(&psar->lock, 0);
 
@@ -123,7 +125,8 @@ eintr:
             if (errno == EINTR) {
                 /* calc next select block time if system interrupt */
                 gettimeofday(&selectend, 0);
-                /* Simplified calculation, maximum deviation within 1 second for wait recv */
+                /* Simplified calculation, 
+                 * maximum deviation within 1 second for wait recv */
                 tv.tv_sec = tv.tv_sec - (selectend.tv_sec - selectbegin.tv_sec);
                 tv.tv_usec = abs(tv.tv_usec - (selectend.tv_usec - selectbegin.tv_usec));  
 #ifdef	RTT_DEBUG
@@ -150,17 +153,21 @@ eintr:
                 n = recvmsg(psar->fd, &msgrecv, 0);
                 if (n < 0 && errno == EAGAIN) {
 #ifdef	RTT_DEBUG
-                    fprintf(stderr, "recvmsg EAGAIN\n");
+                    //fprintf(stderr, "recvmsg EAGAIN\n");
 #endif
                     break;
                 }
 #ifdef	RTT_DEBUG
                 fprintf(stderr, "\e[31mrecv seq %4d: \e[m\n", psar->recvhdr.seq);
-                //rtt_debug(&psar->rttinfo);
 #endif
-                if(n >= sizeof(struct hdr) && psar->recvhdr.seq == psar->sendhdr.seq && 
-                        psar->recvhdr.flag[0] == 0 && psar->recvhdr.flag[1] == 0xfa)
-                    goto finish;  /* finish matching receive */
+                if(n >= sizeof(struct hdr) && psar->recvhdr.flag[0] == 0 && psar->recvhdr.flag[1] == 0xfa) {
+                    if (psar->recvhdr.seq == psar->sendhdr.seq) 
+                        goto finish;
+                    else {
+                        if (psar->in) 
+                            psar->in(psar, inbuff, n - sizeof(struct hdr));
+                    }
+                }
             } while (1);
         }
     }
