@@ -1,17 +1,14 @@
+#include    "yherror.h"
 
-#include "error.h"
-#include	<stdarg.h>		/* ANSI C header file */
-#include	<syslog.h>		/* for syslog() */
-#include <stdio.h>
-#include <stdlib.h>
 
 int		daemon_proc;		/* set nonzero by daemon_init() */
 
 static void	err_doit(int, int, const char *, va_list);
 
-/* Nonfatal error related to system call
- * Print message and return */
+/* Nonfatal error related to a system call.
+ * Print a message and return. */
 
+/* $$.ix [err_ret]~function,~source~code$$ */
 void
 err_ret(const char *fmt, ...)
 {
@@ -23,9 +20,10 @@ err_ret(const char *fmt, ...)
 	return;
 }
 
-/* Fatal error related to system call
- * Print message and terminate */
+/* Fatal error related to a system call.
+ * Print a message and terminate. */
 
+/* $$.ix [err_sys]~function,~source~code$$ */
 void
 err_sys(const char *fmt, ...)
 {
@@ -37,9 +35,10 @@ err_sys(const char *fmt, ...)
 	exit(1);
 }
 
-/* Fatal error related to system call
- * Print message, dump core, and terminate */
+/* Fatal error related to a system call.
+ * Print a message, dump core, and terminate. */
 
+/* $$.ix [err_dump]~function,~source~code$$ */
 void
 err_dump(const char *fmt, ...)
 {
@@ -52,9 +51,10 @@ err_dump(const char *fmt, ...)
 	exit(1);		/* shouldn't get here */
 }
 
-/* Nonfatal error unrelated to system call
- * Print message and return */
+/* Nonfatal error unrelated to a system call.
+ * Print a message and return. */
 
+/* $$.ix [err_msg]~function,~source~code$$ */
 void
 err_msg(const char *fmt, ...)
 {
@@ -66,9 +66,10 @@ err_msg(const char *fmt, ...)
 	return;
 }
 
-/* Fatal error unrelated to system call
- * Print message and terminate */
+/* Fatal error unrelated to a system call.
+ * Print a message and terminate. */
 
+/* $$.ix [err_quit]~function,~source~code$$ */
 void
 err_quit(const char *fmt, ...)
 {
@@ -80,28 +81,29 @@ err_quit(const char *fmt, ...)
 	exit(1);
 }
 
-/* Print message and return to caller
- * Caller specifies "errnoflag" and "level" */
+/* Print a message and return to caller.
+ * Caller specifies "errnoflag" and "level". */
 
+/* $$.ix [err_doit]~function,~source~code$$ */
 static void
 err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 {
 	int		errno_save, n;
-	char	buf[MAXLINE + 1];
+	char	buf[MAXLINE];
 
 	errno_save = errno;		/* value caller might want printed */
-#ifdef	HAVE_VSNPRINTF
-	vsnprintf(buf, MAXLINE, fmt, ap);	/* safe */
-#else
-	vsprintf(buf, fmt, ap);					/* not safe */
-#endif
+//#ifdef	HAVE_VSNPRINTF
+	vsnprintf(buf, sizeof(buf), fmt, ap);	/* this is safe */
+//#else
+	//vsprintf(buf, fmt, ap);					/* this is not safe */
+//#endif
 	n = strlen(buf);
 	if (errnoflag)
-		snprintf(buf + n, MAXLINE - n, ": %s", strerror(errno_save));
+		snprintf(buf+n, sizeof(buf)-n, ": %s", strerror(errno_save));
 	strcat(buf, "\n");
 
 	if (daemon_proc) {
-		syslog(level, buf);
+		syslog(level, buf, "");
 	} else {
 		fflush(stdout);		/* in case stdout and stderr are the same */
 		fputs(buf, stderr);

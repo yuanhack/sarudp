@@ -1,11 +1,11 @@
-//#include "unp.h"
 #include "sarudp.h"
 #include "domain_parse.h"
 #include "wrapfunc.h"
 
-void sar_cli(FILE *fp, sarudpmgr_t *psar, const SA *pservaddr, socklen_t servlen);
+void sar_cli_send(FILE *fp, supeer_t *psar);
+void sar_cli_send_recv(FILE *fp, supeer_t *psar);
 
-void udpin(sarudpmgr_t *pin, char *buff, int len)
+void udpin(supeer_t *pin, char *buff, int len)
 {
     if (len > 0)
         printf("recv svr len %d info %s\n", len, buff);
@@ -15,7 +15,7 @@ int
 main(int argc, char **argv)
 {
 	struct sockaddr_in	servaddr;
-    sarudpmgr_t sar;
+    supeer_t sar;
     char ip[256], errinfo[256];
 
 	if (argc != 2 && argc != 3)
@@ -31,10 +31,11 @@ main(int argc, char **argv)
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 
-    if (sarudp_create((sarudpmgr_t*)&sar, AF_INET, 0, udpin) < 0)
+    if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr), udpin) < 0)
         err_quit("sarudp_init error");
 
-	sar_cli(stdin, &sar, (SA *) &servaddr, sizeof(servaddr));
+	//sar_cli_send_recv(stdin, &sar);
+	sar_cli_send(stdin, &sar);
 
 	exit(0);
 }

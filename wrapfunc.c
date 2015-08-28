@@ -64,15 +64,14 @@ Sendmsg(int fd, const struct msghdr *msg, int flags)
         err_sys("sendmsg error");
 }
 
-ssize_t Sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes,
-        const SA *destaddr, socklen_t destlen)
+ssize_t Su_send_recv(supeer_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes)
 {
     ssize_t	n;
 
-    n = sarudp_send_recv(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen);
+    n = su_peer_send_recv(psar, outbuff, outbytes, inbuff, inbytes);
     if (n < 0)
-        err_quit("sarudp_send_recv error");
+        err_quit("su_peer_send_recv error");
 
     return(n);
 }

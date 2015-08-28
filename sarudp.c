@@ -1,48 +1,57 @@
 #include "sarudp.h"
+#include "yherror.h"
+#include "yhevent.h"
+#include "yhservice.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 
-int setfd_nonblock(int fd)    
+void peer_data_in(fd_event * fe)
 {
-    int status;
-    if ((status = fcntl(fd, F_GETFL)) < 0) { 
-        err_ret("setfd_nonblock() fcntl F_GETFL error[%d]", errno); 
-        return -1; 
-    }  
-    status |= O_NONBLOCK;     
-    if (fcntl(fd, F_SETFL, status) < 0) { 
-        err_ret("setfd_nonblock() fcntl F_SETFL error[%d]", errno); 
-        return -1;            
-    }  
-    return 0;                 
-}
-void Setfd_nonblock(int fd)
-{
-    if ( setfd_nonblock(fd) < 0 ) 
-        exit(1);
+    char buf[1024] = {0};
+    struct sockaddr_in sa;
+    socklen_t len = sizeof(struct sockaddr_in);
+    supeer_t *psar = struct_entry(fe, supeer_t, fe);
+    int ret = recvfrom( fe->fd, buf, sizeof(buf), 0, (struct sockaddr*)&sa, &len);
+    log_msg("udp server [%05d] recv %s:%d bytes %d %s", fe->fd,
+            inet_ntoa(sa.sin_addr), ntohs(sa.sin_port),
+            ret, buf+10);
 }
 
 
-int sarudp_create(sarudpmgr_t *psar, int family, int flag, sarudpin* in)
+int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen, sarudpin* in)
 {
-    psar->fd = socket(family, SOCK_DGRAM, flag);
+    psar->fd = socket(ptoaddr->sa_family, SOCK_DGRAM, 0);
     if (psar->fd < 0) 
         return -1;
 
+    Setfd_nonblock(psar->fd);
+
+    memcpy(&psar->destaddr, ptoaddr, servlen);
+    memset(&psar->sendhdr, 0, sizeof(struct hdr));
+    memset(&psar->recvhdr, 0, sizeof(struct hdr));
+    memset(&psar->fe, 0, sizeof(fd_event_t));
+
+    psar->destlen = servlen;
     psar->rttinit = 0;
     psar->sendhdr.seq = 0;
-    psar->sendhdr.flag[0] = 0;
-    psar->sendhdr.flag[1] = 0xfa;
     psar->in = in;
-    Setfd_nonblock(psar->fd);
+
     pthread_mutex_init(&psar->lock, 0);
+    pthread_cond_init(&psar->cond, 0);
+
+    psar->pem = Em_open(1, -1, 0, 0, 0);
+
+    fd_event_init(&psar->fe, psar->pem, psar->fd);
+    fd_event_set(&psar->fe, EPOLLIN, peer_data_in);
+    Em_fd_event_add(&psar->fe);
+    Em_run(psar->pem);
 
     return 0;
 }
 
-void serudp_destroy(sarudpmgr_t *psar)
+void serudp_peer_rm(supeer_t *psar)
 {
     if (psar->fd >= 0) { 
         close(psar->fd); 
@@ -50,18 +59,39 @@ void serudp_destroy(sarudpmgr_t *psar)
         return;
     }
     pthread_mutex_destroy(&psar->lock);
+    pthread_cond_destroy(&psar->cond);
 }
 
-void sarudp_seq_set(sarudpmgr_t *psar, int seq)
+ssize_t su_peer_send_act(supeer_t *psar, const void *outbuff, size_t outbytes)
 {
+    ssize_t			n;
+    struct iovec	iovsend[2] = {{0}};
+    struct msghdr	msgsend = {0};	/* assumed init to 0 */
+
     pthread_mutex_lock(&psar->lock);
-    psar->sendhdr.seq = seq;
+    psar->sendhdr.flag = 0;
+    psar->sendhdr.type = SU_GENERAL;
+    psar->sendhdr.seq++;
+    msgsend.msg_name = (void*)&psar->destaddr;
+    msgsend.msg_namelen = psar->destlen;
+    msgsend.msg_iov = &iovsend[0];
+    msgsend.msg_iovlen = 2;
+
+    iovsend[0].iov_base = &psar->sendhdr;
+    iovsend[0].iov_len = sizeof(struct hdr);
+    iovsend[1].iov_base = (void*)outbuff;
+    iovsend[1].iov_len = outbytes;
+
+    n = sendmsg(psar->fd, &msgsend, 0);
     pthread_mutex_unlock(&psar->lock);
+
+    if (n != sizeof(struct hdr) + outbytes)
+        return -1;
+    return(outbytes);
 }
 
-ssize_t sarudp_send_recv_act(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes,
-        const SA *destaddr, socklen_t destlen, int retransmit)
+ssize_t su_peer_send_recv_act(supeer_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes, int retransmit)
 {
     ssize_t			n;
     struct iovec	iovsend[2], iovrecv[2];
@@ -79,8 +109,10 @@ ssize_t sarudp_send_recv_act(sarudpmgr_t *psar, const void *outbuff, size_t outb
 
     if (retransmit == 0)
         psar->sendhdr.seq++;
-    msgsend.msg_name = (void*)destaddr;
-    msgsend.msg_namelen = destlen;
+    psar->sendhdr.flag = 0;
+    psar->sendhdr.type = SU_RELIABLE;
+    msgsend.msg_name = (void*)&psar->destaddr;
+    msgsend.msg_namelen = psar->destlen;
     msgsend.msg_iov = iovsend;
     msgsend.msg_iovlen = 2;
 
@@ -160,7 +192,8 @@ eintr:
 #ifdef	RTT_DEBUG
                 fprintf(stderr, "\e[31mrecv seq %4d: \e[m\n", psar->recvhdr.seq);
 #endif
-                if(n >= sizeof(struct hdr) && psar->recvhdr.flag[0] == 0 && psar->recvhdr.flag[1] == 0xfa) {
+                if(n >= sizeof(struct hdr) && psar->recvhdr.flag == 0 && 
+                        (psar->recvhdr.type == SU_GENERAL || psar->recvhdr.type == SU_RELIABLE)) {
                     if (psar->recvhdr.seq == psar->sendhdr.seq) 
                         goto finish;
                     else {
@@ -181,16 +214,20 @@ finish:
 }
 
 
-ssize_t sarudp_send_recv(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes,
-        const SA *destaddr, socklen_t destlen)
+ssize_t su_peer_send_recv(supeer_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes)
 {
-    return sarudp_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen, 0);
+    return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 0);
 }
-ssize_t sarudp_send_recv_retry(sarudpmgr_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes,
-        const SA *destaddr, socklen_t destlen)
+
+ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes)
 {
-    return sarudp_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, destaddr, destlen, 1);
+    return su_peer_send_act(psar, outbuff, outbytes);
+}
+
+ssize_t su_peer_send_recv_retry(supeer_t *psar, const void *outbuff, size_t outbytes,
+        void *inbuff, size_t inbytes)
+{
+    return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 1);
 }
 
