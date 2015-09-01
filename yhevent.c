@@ -1,43 +1,49 @@
 #include "yhevent.h" 
 
-static void fd_event_init_(fd_event *fe, epoll_manager *em, int fd, int type)
+static void fe_init_(fe_t *fe, em_t *em, int fd, int type)
 {
     fe->event.data.ptr  = fe; 
     fe->fd              = fd;
     fe->em              = em;
-    fe->heap            = 0;
-}
-void fd_event_init(fd_event *fe, epoll_manager *em, int fd)
-{
-    fd_event_init_(fe, em, fd, 0);
+    fe->heap            = type;
 }
 
-// 从堆上获取一个 fd_event_t 并且初始化 
-// 自动调用 初始化 绑定 em 和 fd, 设置堆标志
-fd_event_t * fd_event_new(epoll_manager_t *em, int fd)
+// 栈上的自动变量 fe_t 初始化时候 
+//  绑定 em 和 fd, 设置堆标志 heap 为0
+//  这样防止 fe_del 时错误的调用 free
+void fe_init(fe_t *fe, em_t *em, int fd)
 {
-    fd_event_t * fe = (fd_event_t*)calloc(1, sizeof(fd_event_t));
+    fe_init_(fe, em, fd, 0);
+}
+
+// 从堆上获取一个 fe_t, 在初始化的时候
+//  绑定 em 和 fd, 设置堆标志 heap 为1
+//  这样保证 fe_del 的时候 free 
+fe_t * fe_new(em_t *em, int fd)
+{
+    fe_t * fe = (fe_t*)calloc(1, sizeof(fe_t));
     if (fe == 0) {
-        err_ret("fd_event_new() calloc error[%d]", errno);
+        err_ret("fe_new() calloc error[%d]", errno);
         return 0;
     }
-    fd_event_init_(fe, em, fd, 1);
+    fe_init_(fe, em, fd, 1);
     return fe;
 }
-fd_event_t * Fd_event_new(epoll_manager_t *em, int fd)
+fe_t * Fe_new(em_t *em, int fd)
 {
-    fd_event_t *fe = fd_event_new(em, fd);
+    fe_t *fe = fe_new(em, fd);
     if (fe == 0) exit(1);
     return fe;
 }
 
 
-void fd_event_del(fd_event *fe)
+void fe_del(fe_t *fe)
 {
     if (fe == 0) return;
+    fe_em_del(fe);
     if (fe->heap) free(fe);
 }
-void fd_event_set(fd_event *fe, int event, fd_event_callback cb)
+void fe_set(fe_t *fe, int event, fe_cb_t cb)
 {
     switch (event) {
         case EPOLLIN  : fe->in  = cb; break;
@@ -51,42 +57,45 @@ void fd_event_set(fd_event *fe, int event, fd_event_callback cb)
     };
     fe->event.events |= event;
 }
-void fd_event_unset(fd_event *fe, int event)
+void fe_unset(fe_t *fe, int event)
 {
     fe->event.events &= ~event;
 }
-int em_fd_event_add(fd_event* fe)
+int fe_em_add(fe_t* fe)
 {
     int ret = epoll_ctl(fe->em->epfd, EPOLL_CTL_ADD, fe->fd, &fe->event);
-    if (ret < 0) err_ret("em_fd_event_add() epoll_ctl %d fd %d error[%d]"
-            , fe->em->epfd, fe->fd, errno);
+    if (ret < 0) 
+        err_ret("fe_em_add() epoll_ctl %d fd %d error[%d]"
+                , fe->em->epfd, fe->fd, errno);
     return ret;
 }
-int em_fd_event_mod(fd_event* fe)
+int fe_em_mod(fe_t* fe)
 {
     int ret =  epoll_ctl(fe->em->epfd, EPOLL_CTL_MOD, fe->fd, &fe->event);
-    if (ret < 0) err_ret("em_fd_event_mod() epoll_ctl %d fd %d error[%d]"
-            , fe->em->epfd, fe->fd, errno);
+    if (ret < 0) 
+        err_ret("fe_em_mod() epoll_ctl %d fd %d error[%d]"
+                , fe->em->epfd, fe->fd, errno);
     return ret;
 }
-int em_fd_event_del(fd_event* fe)
+int fe_em_del(fe_t* fe)
 {
     int ret = epoll_ctl(fe->em->epfd, EPOLL_CTL_DEL, fe->fd, &fe->event);
-    if (ret < 0) err_ret("em_fd_event_del() epoll_ctl %d fd %d error[%d]"
-            , fe->em->epfd, fe->fd, errno);
+    if (ret < 0) 
+        err_ret("fe_em_del() epoll_ctl %d fd %d error[%d]"
+                , fe->em->epfd, fe->fd, errno);
     return ret;
 }
-void Em_fd_event_add(fd_event* fe)
+void Fe_em_add(fe_t* fe)
 {
-    if (em_fd_event_add(fe) < 0) exit(1);
+    if (fe_em_add(fe) < 0) exit(1);
 }
-void Em_fd_event_mod(fd_event* fe)
+void Fe_em_mod(fe_t* fe)
 {
-    if (em_fd_event_mod(fe) < 0) exit(1);
+    if (fe_em_mod(fe) < 0) exit(1);
 }
-void Em_fd_event_del(fd_event* fe)
+void Fe_em_del(fe_t* fe)
 {
-    if (em_fd_event_del(fe) < 0) exit(1);
+    if (fe_em_del(fe) < 0) exit(1);
 }
 int setfd_nonblock(int fd)
 {
@@ -120,13 +129,14 @@ void Setsock_rcvtimeo(int fd, int second, int microsecond)
     if ( setsock_rcvtimeo(fd, second, microsecond) < 0 ) exit(1);
 }
 /* * create epoll manager */
-epoll_manager* em_open(int maxfds, int timeout, 
-        em_callback before, em_callback events, em_callback after)
+em_t* em_open(int maxfds, int timeout, 
+        em_cb_t before, em_cb_t events, em_cb_t after)
 {
-    epoll_manager *em = 0; 
+    em_t *em = 0; 
     if (maxfds <= 0) { errno = EINVAL; return 0; }
-    em = (epoll_manager*)calloc(1, sizeof(epoll_manager) + 
+    em = (em_t*)calloc(1, sizeof(em_t) + 
             (maxfds+1) * sizeof(struct epoll_event));
+    if (em == 0) { /*errno =  ENOMEM;*/ return 0; }
     em->timeout = timeout;
     em->maxfds  = maxfds;
     em->before  = before;
@@ -141,20 +151,20 @@ err_out:
     if (em         != 0) { free(em);          }
     return 0;
 }
-epoll_manager* Em_open(int maxfds, int timeout, em_callback before, 
-        em_callback events, em_callback after)
+em_t* Em_open(int maxfds, int timeout, em_cb_t before, 
+        em_cb_t events, em_cb_t after)
 {
-    epoll_manager *em;
+    em_t *em;
     if ((em = em_open(maxfds, timeout, before, events, after)) == 0) 
     { err_ret("Em_open() em_open error[%d]", errno); exit(1); }
     return em;
 }
 static void * em_thread(void *p)
 {
-    epoll_manager *em = (epoll_manager*)p;
+    em_t *em = (em_t*)p;
     int n;
     void            *ptr;
-    struct fd_event *fe = 0;
+    fe_t *fe = 0;
     pthread_detach(em->tid);
     while (em->run) {
         if (em->before) em->before(em);
@@ -163,7 +173,7 @@ static void * em_thread(void *p)
         for (n = 0; n < em->nfds; ++n) {
             ptr = em->evlist[n].data.ptr;
             if (ptr == 0) continue;
-            fe = (fd_event*)ptr;
+            fe = (fe_t*)ptr;
             if(em->evlist[n].events & EPOLLIN ) if(fe->in ) { fe->in (fe); }
             if(em->evlist[n].events & EPOLLOUT) if(fe->out) { fe->out(fe); }
             if(em->evlist[n].events & EPOLLPRI) if(fe->pri) { fe->pri(fe); }
@@ -172,7 +182,7 @@ static void * em_thread(void *p)
     }
     return (void*)0;
 }
-int em_run(epoll_manager *em)
+int em_run(em_t *em)
 {
     int ret;
     pthread_attr_t attr;
@@ -180,7 +190,10 @@ int em_run(epoll_manager *em)
     pthread_attr_setstacksize(&attr, 1024*1024); //set stack size 1M
 
     pthread_mutex_lock(&em->lock);
-    if (em->run) { pthread_mutex_unlock(&em->lock); return 0; }
+    if (em->run) { 
+        pthread_mutex_unlock(&em->lock); 
+        return 0; 
+    }
     em->run = 1;
     pthread_mutex_unlock(&em->lock);
 
@@ -192,11 +205,11 @@ int em_run(epoll_manager *em)
     pthread_attr_destroy(&attr);
     return 0;
 }
-void Em_run(epoll_manager *em)
+void Em_run(em_t *em)
 {
     if (em_run(em) < 0) exit(1);
 }
-int em_set_timeout(epoll_manager *em, int timeout)
+int em_set_timeout(em_t *em, int timeout)
 {
     int old = em->timeout;
     em->timeout = timeout;                                                                                               

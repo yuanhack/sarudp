@@ -8,11 +8,11 @@
 
 
 
-void before(const epoll_manager * const em)
+void before(const em_t * const em)
 {
     log_msg("before");
 }
-void event(const epoll_manager * const em)
+void event(const em_t * const em)
 {
     log_msg("epoll_wait ret %d", em->nfds);
     if (em->nfds < 0) { 
@@ -21,7 +21,7 @@ void event(const epoll_manager * const em)
         exit(1); 
     }
 }
-void after(const epoll_manager * const em)
+void after(const em_t * const em)
 {
     log_msg("after");
 }

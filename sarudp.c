@@ -7,20 +7,22 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
-void peer_data_in(fd_event * fe)
+void cb_peer_data_in(fe_t * fe)
 {
     char buf[1024] = {0};
     struct sockaddr_in sa;
     socklen_t len = sizeof(struct sockaddr_in);
     supeer_t *psar = struct_entry(fe, supeer_t, fe);
-    int ret = recvfrom( fe->fd, buf, sizeof(buf), 0, (struct sockaddr*)&sa, &len);
+    int ret = recvfrom( fe->fd, buf, sizeof(buf), 0, 
+            (struct sockaddr*)&sa, &len);
     log_msg("udp server [%05d] recv %s:%d bytes %d %s", fe->fd,
             inet_ntoa(sa.sin_addr), ntohs(sa.sin_port),
             ret, buf+10);
 }
 
 
-int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen, sarudpin* in)
+int su_peer_new(supeer_t *psar, 
+        const SA *ptoaddr, socklen_t servlen, supeer_in_cb_t* in)
 {
     psar->fd = socket(ptoaddr->sa_family, SOCK_DGRAM, 0);
     if (psar->fd < 0) 
@@ -31,7 +33,7 @@ int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen, sarudpin* 
     memcpy(&psar->destaddr, ptoaddr, servlen);
     memset(&psar->sendhdr, 0, sizeof(struct hdr));
     memset(&psar->recvhdr, 0, sizeof(struct hdr));
-    memset(&psar->fe, 0, sizeof(fd_event_t));
+    memset(&psar->fe, 0, sizeof(fe_t));
 
     psar->destlen = servlen;
     psar->rttinit = 0;
@@ -43,9 +45,9 @@ int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen, sarudpin* 
 
     psar->pem = Em_open(1, -1, 0, 0, 0);
 
-    fd_event_init(&psar->fe, psar->pem, psar->fd);
-    fd_event_set(&psar->fe, EPOLLIN, peer_data_in);
-    Em_fd_event_add(&psar->fe);
+    fe_init(&psar->fe, psar->pem, psar->fd);
+    fe_set(&psar->fe, EPOLLIN, cb_peer_data_in);
+    Fe_em_add(&psar->fe);
     Em_run(psar->pem);
 
     return 0;

@@ -14,11 +14,11 @@
 #include <dirent.h>
 #include "yherror.h"
 
-typedef struct fd_event fd_event, fd_event_t, *fd_event_handle, *fd_event_handle_t;
-typedef struct epoll_manager epoll_manager, epoll_manager_t, *epoll_manager_handle, *epoll_manager_handle_t;
+typedef struct fd_event fd_event_t, fe_t;
+typedef struct epoll_manager epoll_manager_t, em_t;
 
-typedef void  fd_event_callback(fd_event * fe);
-typedef void  em_callback(const epoll_manager * const em);
+typedef void  fe_cb_t(fe_t * fe);
+typedef void  em_cb_t(const em_t * const em);
 
 ///////////////////////////////////////////////////////////////////////////////
 #ifndef offsetof
@@ -53,16 +53,16 @@ typedef void  em_callback(const epoll_manager * const em);
 struct fd_event {
     int fd;                     // file descriptor
     struct epoll_event event;   
-    epoll_manager       *em;    // epoll manager
+    em_t                *em;    // epoll manager
     void                *ptr;   // user data ptr, user alloc/free
 
     unsigned int heap; // heap flag is !0 alloc, stack flag is 0 
 
     // event callback:
-    fd_event_callback * in;
-    fd_event_callback * out;
-    fd_event_callback * pri;
-    fd_event_callback * rdhup;
+    fe_cb_t * in;
+    fe_cb_t * out;
+    fe_cb_t * pri;
+    fe_cb_t * rdhup;
 };
 
 /* * epoll manager object */
@@ -70,9 +70,9 @@ struct epoll_manager
 {
     pthread_mutex_t     lock;    // safe lock
     pthread_t           tid;     // epoll thread id
-    em_callback *       before;  // epoll_wait before
-    em_callback *       event;   // epoll_wait after,Before the event processing
-    em_callback *       after;   // After the completion of the event processing
+    em_cb_t *       before;  // epoll_wait before
+    em_cb_t *       event;   // epoll_wait after,Before the event processing
+    em_cb_t *       after;   // After the completion of the event processing
     int                 run;     // epoll manager thread control
     int                 epfd;    // epoll_wait par1 epfd
     int                 timeout; // epoll_wait par4 timeout
@@ -88,32 +88,32 @@ extern "C"
 #endif
 
 #ifdef __cplusplus
-    epoll_manager* em_open(int maxfds, int timeout, 
-            em_callback before=0, em_callback events=0, em_callback after=0);
-    epoll_manager* Em_open(int maxfds, int timeout, 
-            em_callback before=0, em_callback events=0, em_callback after=0);
+    em_t* em_open(int maxfds, int timeout, 
+            em_cb_t before=0, em_cb_t events=0, em_cb_t after=0);
+    em_t* Em_open(int maxfds, int timeout, 
+            em_cb_t before=0, em_cb_t events=0, em_cb_t after=0);
 #else
-    epoll_manager* em_open(int maxfds, int timeout, em_callback before, 
-            em_callback events, em_callback after);
-    epoll_manager* Em_open(int maxfds, int timeout, em_callback before, 
-            em_callback events, em_callback after);
+    em_t* em_open(int maxfds, int timeout, em_cb_t before, 
+            em_cb_t events, em_cb_t after);
+    em_t* Em_open(int maxfds, int timeout, em_cb_t before, 
+            em_cb_t events, em_cb_t after);
 #endif
-    void Em_run(epoll_manager *em);
-    int  em_run(epoll_manager *em);
-    int  em_set_timeout(epoll_manager *em, int timeout);
+    void Em_run(em_t *em);
+    int  em_run(em_t *em);
+    int  em_set_timeout(em_t *em, int timeout);
 
     // 调用 epoll_ctl 执行 ADD MOD DEL
     //  返回 epoll_ctl的返回值
     //  出错时打印出错消息, 返回epoll_ctl的返回码
-    int  em_fd_event_add(fd_event* fe);
-    int  em_fd_event_mod(fd_event* fe);
-    int  em_fd_event_del(fd_event* fe);
+    int  fe_em_add(fe_t* fe);
+    int  fe_em_mod(fe_t* fe);
+    int  fe_em_del(fe_t* fe);
 
     // 调用 epoll_ctl 执行 ADD MOD DEL
     //   出错时打印出错消息并且退出程序
-    void Em_fd_event_add(fd_event* fe);
-    void Em_fd_event_mod(fd_event* fe);
-    void Em_fd_event_del(fd_event* fe);
+    void Fe_em_add(fe_t* fe);
+    void Fe_em_mod(fe_t* fe);
+    void Fe_em_del(fe_t* fe);
 
     int  setfd_nonblock(int fd);
     void Setfd_nonblock(int fd);
@@ -121,18 +121,18 @@ extern "C"
     void Setsock_rcvtimeo(int fd, int second, int microsecond);
     int close_all_fd(void);
 
-    fd_event_t * fd_event_new(epoll_manager_t *em, int fd);
-    fd_event_t * Fd_event_new(epoll_manager_t *em, int fd);
-    void fd_event_init(fd_event *fhp, epoll_manager *em, int fd);
-    void fd_event_del(fd_event *p);
+    fe_t * fe_new(em_t *em, int fd);
+    fe_t * Fe_new(em_t *em, int fd);
+    void fe_init(fe_t *fe, em_t *em, int fd);
+    void fe_del (fe_t *p);
 
 #ifdef __cplusplus
-    void fd_event_set(fd_event *fh, int event, fd_event_callback cb = 0);
+    void fe_set(fe_t *fh, int event, fe_cb_t cb = 0);
 #else
-    void fd_event_set(fd_event *fh, int event, fd_event_callback cb);
+    void fe_set(fe_t *fh, int event, fe_cb_t cb);
 #endif
 
-    void fd_event_unset(fd_event *fe, int event);
+    void fe_unset(fe_t *fe, int event);
 
 #ifdef __cplusplus 
 } 

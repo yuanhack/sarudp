@@ -37,7 +37,7 @@ typedef struct sockaddr_in6 SA6;
 typedef struct sarudppeer supeer_t;
 typedef union { SA4 addr4; SA6 addr6; } SUN;
 
-typedef void sarudpin(supeer_t *ps, char* buff, int len);
+typedef void supeer_in_cb_t(supeer_t *ps, char* buff, int len);
 
 // SYN/ACK Retransfer UDP peer manager
 struct sarudppeer {
@@ -50,12 +50,13 @@ struct sarudppeer {
     int rttinit;
     SUN destaddr;
     socklen_t destlen;
-    fd_event_t fe;
-    epoll_manager_t *pem;
-    sarudpin* in;
+    fe_t fe;
+    em_t *pem;
+    supeer_in_cb_t* in;
 };
 
-int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen, sarudpin* in);
+int su_peer_new(supeer_t *psar, 
+        const SA *ptoaddr, socklen_t servlen, supeer_in_cb_t* in);
 int su_peer_rm(supeer_t *psar);
 
 ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes);
