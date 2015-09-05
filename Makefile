@@ -1,7 +1,7 @@
 
 CC = gcc
 CFLAGS += -g
-CFLAGS += -O2
+#CFLAGS += -O2
 CFLAGS += -D_REENTRANT -Wall
 LIBS = -lpthread
 RANLIB = ranlib
@@ -16,7 +16,7 @@ PROGS =	udpcli
 all:	${PROGS}
 
 udpcli:	main.o sarcli.o sarudp.o rtt.o domain_parse.o wrapfunc.o \
-	yhevent.o yhservice.o yherror.o yharguments.o yhsocket.o
+	yhevent.o yhservice.o yherror.o yharguments.o yhsocket.o yhtime.o
 		${CC} ${CFLAGS} -o $@ $^ ${LIBS}
 
 clean:

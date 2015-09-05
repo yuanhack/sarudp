@@ -1,7 +1,7 @@
 #include "yharguments.h"
 #include "yherror.h"
 
-int port    = 55555;
+int port    = -1;
 int daemond = 0;
 int optp;
 

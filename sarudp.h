@@ -5,6 +5,7 @@
 #include "wrapfunc.h"
 #include "yherror.h"
 #include "yhevent.h"
+#include "list.h"
 
 #include <pthread.h>
 #include <sys/socket.h>
@@ -34,30 +35,41 @@ struct hdr {
 typedef struct sockaddr     SA;
 typedef struct sockaddr_in  SA4;
 typedef struct sockaddr_in6 SA6;
-typedef struct sarudppeer supeer_t;
-typedef union { SA4 addr4; SA6 addr6; } SUN;
+typedef struct sar_udp_peer supeer_t;
+typedef union { SA4 addr4; SA6 addr6; } SAUN;
 
-typedef void supeer_in_cb_t(supeer_t *ps, char* buff, int len);
+typedef void cb_supeer_receiver_t(supeer_t *ps, char* buff, int len);
 
-// SYN/ACK Retransfer UDP peer manager
-struct sarudppeer {
+typedef struct data {
+    struct list node;
+    int         len;
+    uint8_t     data[];
+} data_t;
+
+// SYN/ACK/Retransfer UDP peer manager
+struct sar_udp_peer {
     int fd;
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
     struct hdr sendhdr;
-    struct hdr recvhdr;
     struct rtt_info rttinfo;
     int rttinit;
-    SUN destaddr;
+
+    SAUN destaddr;
     socklen_t destlen;
+
     fe_t fe;
-    em_t *pem;
-    supeer_in_cb_t* in;
+    pthread_t tid;
+    cb_supeer_receiver_t* in;
+
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    int relcount;
+    struct list ls_rel;  // SU_RELIABLE
+    struct list ls_gen;  // SU_GENERAL
 };
 
 int su_peer_new(supeer_t *psar, 
-        const SA *ptoaddr, socklen_t servlen, supeer_in_cb_t* in);
-int su_peer_rm(supeer_t *psar);
+        const SA *ptoaddr, socklen_t servlen, cb_supeer_receiver_t* in);
+void su_peer_rm(supeer_t *psar);
 
 ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes);
 ssize_t su_peer_send_recv(supeer_t *psar, const void *outbuff, size_t outbytes,

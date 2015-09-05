@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-int		rtt_d_flag = 0;		/* debug flag; can be set by caller */
+int		rtt_d_flag = 1;		/* debug flag; can be set by caller */
 
 /*
  * Calculate the RTO value based on current estimators:

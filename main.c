@@ -31,12 +31,11 @@ main(int argc, char **argv)
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 
-    if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, 
-                sizeof(servaddr), udpin) < 0)
+    if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr), udpin) < 0)
         err_quit("sarudp_init error");
 
-	//sar_cli_send_recv(stdin, &sar);
-	sar_cli_send(stdin, &sar);
+	sar_cli_send_recv(stdin, &sar);
+	//sar_cli_send(stdin, &sar);
 
 	exit(0);
 }

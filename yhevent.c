@@ -1,6 +1,6 @@
 #include "yhevent.h" 
 
-static void fe_init_(fe_t *fe, em_t *em, int fd, int type)
+static void fe_bind(fe_t *fe, em_t *em, int fd, int type)
 {
     fe->event.data.ptr  = fe; 
     fe->fd              = fd;
@@ -13,7 +13,7 @@ static void fe_init_(fe_t *fe, em_t *em, int fd, int type)
 //  这样防止 fe_del 时错误的调用 free
 void fe_init(fe_t *fe, em_t *em, int fd)
 {
-    fe_init_(fe, em, fd, 0);
+    fe_bind(fe, em, fd, 0);
 }
 
 // 从堆上获取一个 fe_t, 在初始化的时候
@@ -26,7 +26,7 @@ fe_t * fe_new(em_t *em, int fd)
         err_ret("fe_new() calloc error[%d]", errno);
         return 0;
     }
-    fe_init_(fe, em, fd, 1);
+    fe_bind(fe, em, fd, 1);
     return fe;
 }
 fe_t * Fe_new(em_t *em, int fd)
@@ -212,7 +212,7 @@ void Em_run(em_t *em)
 int em_set_timeout(em_t *em, int timeout)
 {
     int old = em->timeout;
-    em->timeout = timeout;                                                                                               
+    em->timeout = timeout;
     return old;
 }
 
