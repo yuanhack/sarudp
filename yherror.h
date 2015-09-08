@@ -11,7 +11,7 @@
 #include  <stdio.h>
 #include  <string.h>
 
-#define MAXLINE 1024
+#define YH_ERROR_MAXLINE 1024
 extern int daemon_proc;		/* set nonzero by daemon_init() */
 
 #ifdef __cplusplus

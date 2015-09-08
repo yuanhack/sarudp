@@ -5,12 +5,13 @@
 #include <sys/types.h>
 
 struct rtt_info {
-  float		rtt_rtt;	/* most recent measured RTT, seconds */
-  float		rtt_srtt;	/* smoothed RTT estimator, seconds */
-  float		rtt_rttvar;	/* smoothed mean deviation, seconds */
-  float		rtt_rto;	/* current RTO to use, seconds */
-  int		rtt_nrexmt;	/* #times retransmitted: 0, 1, 2, ... */
-  uint32_t	rtt_base;	/* #sec since 1/1/1970 at start */
+    float       rtt_rtt;	/* most recent measured RTT, seconds */
+    float       rtt_srtt;	/* smoothed RTT estimator, seconds */
+    float       rtt_rttvar;	/* smoothed mean deviation, seconds */
+    float       rtt_rto;	/* current RTO to use, seconds */
+    int         rtt_nrexmt;	/* #times retransmitted: 0, 1, 2, ... */
+    uint32_t    rtt_base;	/* #sec since 1/1/1970 at start */
+    uint8_t     rtt_retry;
 };
 
 #define	RTT_RXTMIN      2	/* min retransmit timeout value, seconds */
@@ -19,7 +20,7 @@ struct rtt_info {
 
 				/* function prototypes */
 void	 rtt_debug(struct rtt_info *);
-void	 rtt_init(struct rtt_info *);
+void	 rtt_init(struct rtt_info *, uint8_t);
 void	 rtt_newpack(struct rtt_info *);
 int		 rtt_start(struct rtt_info *);
 void	 rtt_stop(struct rtt_info *, uint32_t);

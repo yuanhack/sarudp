@@ -17,19 +17,25 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#define REALDATAMAX  1024
 
 #pragma pack(push)
 #pragma pack(1)
-struct hdr {
-  uint8_t   flag;   /* protocol flag */
 
-#define SU_GENERAL 0 
-#define SU_RELIABLE 1
+typedef struct hdr {
 
-  uint8_t   type;   /* protocol type */
-  uint32_t	seq;	/* sequence # */
-  uint32_t	ts;		/* timestamp when sent */
-};
+#define     SU_SYN      0xff    /* request */
+#define     SU_ACK      0xfe    /* respnose */
+    uint8_t   act;              /* protocol action */
+
+#define     SU_GENERAL  0       /* general packet, foreign host Don't need to reply */
+#define     SU_RELIABLE 1       /* reliable packet, foreign host Must reply */
+    uint8_t   type;             /* protocol type */
+
+    uint32_t	seq;	        /* sequence # */
+    uint32_t	ts;		        /* timestamp when sent */
+} suhdr_t;
+
 #pragma pack(pop)
 
 typedef struct sockaddr     SA;
@@ -41,30 +47,42 @@ typedef union { SA4 addr4; SA6 addr6; } SAUN;
 typedef void cb_supeer_receiver_t(supeer_t *ps, char* buff, int len);
 
 typedef struct data {
-    struct list node;
     int         len;
     uint8_t     data[];
 } data_t;
 
-// SYN/ACK/Retransfer UDP peer manager
-struct sar_udp_peer {
-    int fd;
-    struct hdr sendhdr;
-    struct rtt_info rttinfo;
-    int rttinit;
+/* recv storage data, list node */
+typedef struct recv_stor {
+    struct list node;
+    SAUN        srcaddr;
+    socklen_t   srclen;
+    suhdr_t     recvhdr;
+    int         len;
+    uint8_t     data[];
+} recv_stor_t;
 
+/* SYN/ACK/Retransfer UDP peer manager */
+struct sar_udp_peer {
+    /* foreign host info */
+    int fd;
     SAUN destaddr;
     socklen_t destlen;
+    uint32_t seq;
+    struct rtt_info rttinfo;
+    int retry;
+    int rttinit;
 
+    /* event driver */
     fe_t fe;
+    cb_supeer_receiver_t * in;
     pthread_t tid;
-    cb_supeer_receiver_t* in;
-
     pthread_mutex_t lock;
-    pthread_cond_t cond;
-    int relcount;
-    struct list ls_rel;  // SU_RELIABLE
-    struct list ls_gen;  // SU_GENERAL
+    pthread_cond_t ackcond;
+
+    /* datas */
+    int         ackwaitnum;     /* SU_RELIABLE Request number */
+    struct list ackrecvls;      /* SU_RELIABLE Reply of the foreign host */
+    struct list synrecvls;      /* Receive all foreign host the active data */
 };
 
 int su_peer_new(supeer_t *psar, 

@@ -37,5 +37,5 @@ main(int argc, char **argv)
 	sar_cli_send_recv(stdin, &sar);
 	//sar_cli_send(stdin, &sar);
 
-	exit(0);
+    exit(0);
 }

@@ -23,13 +23,14 @@ rtt_minmax(float rto)
 }
 
 void
-rtt_init(struct rtt_info *ptr)
+rtt_init(struct rtt_info *ptr, uint8_t retry)
 {
 	struct timeval	tv;
 
 	Gettimeofday(&tv, NULL);
 	ptr->rtt_base = tv.tv_sec;		/* # sec since 1/1/1970 at start */
 
+    ptr->rtt_retry  = retry;
 	ptr->rtt_rtt    = 0;
 	ptr->rtt_srtt   = 0;
 	ptr->rtt_rttvar = 0.75;
@@ -116,7 +117,7 @@ rtt_timeout(struct rtt_info *ptr)
 {
 	ptr->rtt_rto *= 2;		/* next RTO */
 
-	if (++ptr->rtt_nrexmt > RTT_MAXNREXMT)
+	if (++ptr->rtt_nrexmt > ptr->rtt_retry)
 		return(-1);			/* time to give up for this packet */
 	return(0);
 }

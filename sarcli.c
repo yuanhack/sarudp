@@ -3,14 +3,12 @@
 
 #include <stdio.h>
 
-#ifndef MAXLINE
 #define MAXLINE     4096    /* max text line length */
-#endif
 
 void sar_cli_send_recv(FILE *fp, supeer_t *psar)
 {
 	ssize_t	n;
-	char	sendline[MAXLINE], recvline[MAXLINE + 1];
+	char	sendline[MAXLINE], recvline[MAXLINE + 1] = {0};
 
     do {
         if (Fgets(sendline, MAXLINE, fp) == NULL) {
@@ -18,10 +16,9 @@ void sar_cli_send_recv(FILE *fp, supeer_t *psar)
             return ;
         }
 
-        //memset(recvline, 0, sizeof(recvline));
         n = su_peer_send_recv(psar, sendline, strlen(sendline), recvline, MAXLINE);
         if (n < 0)
-            err_quit("su_peer_send_recv error");
+            err_ret("su_peer_send_recv error");
 
         recvline[n] = 0;	/* null terminate */
         fprintf(stdout, "\e[32m%s\e[m", recvline); 

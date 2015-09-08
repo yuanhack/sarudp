@@ -89,7 +89,7 @@ static void
 err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 {
 	int		errno_save, n;
-	char	buf[MAXLINE];
+	char	buf[YH_ERROR_MAXLINE];
 
 	errno_save = errno;		/* value caller might want printed */
 //#ifdef	HAVE_VSNPRINTF

@@ -128,7 +128,7 @@ void Setsock_rcvtimeo(int fd, int second, int microsecond)
 {
     if ( setsock_rcvtimeo(fd, second, microsecond) < 0 ) exit(1);
 }
-/* * create epoll manager */
+/* create epoll manager */
 em_t* em_open(int maxfds, int timeout, 
         em_cb_t before, em_cb_t events, em_cb_t after)
 {
