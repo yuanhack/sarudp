@@ -63,15 +63,3 @@ Sendmsg(int fd, const struct msghdr *msg, int flags)
     if (sendmsg(fd, msg, flags) != nbytes)
         err_sys("sendmsg error");
 }
-
-ssize_t Su_send_recv(supeer_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes)
-{
-    ssize_t	n;
-
-    n = su_peer_send_recv(psar, outbuff, outbytes, inbuff, inbytes);
-    if (n < 0)
-        err_quit("su_peer_send_recv error");
-
-    return(n);
-}

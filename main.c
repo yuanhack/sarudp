@@ -5,10 +5,22 @@
 void sar_cli_send(FILE *fp, supeer_t *psar);
 void sar_cli_send_recv(FILE *fp, supeer_t *psar);
 
-void udpin(supeer_t *pin, char *buff, int len)
+void udpin1(supeer_t *psar, char *buff, int len)
 {
-    if (len > 0)
-        printf("recv svr len %d info %s\n", len, buff);
+    if (len > 0) 
+        printf("1 recv svr len %d info %s\n", len, buff);
+    su_peer_reply(psar, "hello\n", 6);
+    char recvbuff[32];
+    if ((len = su_peer_request(psar, "hello\n", 6, recvbuff, sizeof(recvbuff))) > 0)
+        write(1, recvbuff, len);
+    
+}
+void udpin2(supeer_t *psar, char *buff, int len)
+{
+    if (len > 0) 
+        printf("2 recv svr len %d info %s\n", len, buff);
+    su_peer_reply(psar, "world\n", 6);
+    su_peer_send(psar, "world\n", 6);
 }
   
 int
@@ -31,8 +43,11 @@ main(int argc, char **argv)
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 
-    if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr), udpin) < 0)
+    if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_quit("sarudp_init error");
+
+    reliable_request_handle_install(&sar, udpin1);
+    ordinary_request_handle_install(&sar, udpin2);
 
 	sar_cli_send_recv(stdin, &sar);
 	//sar_cli_send(stdin, &sar);

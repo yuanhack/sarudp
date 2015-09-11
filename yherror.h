@@ -63,6 +63,19 @@ err_msg(const char *fmt, ...);
 void
 err_quit(const char *fmt, ...);
 
+#define ERR_LOG(errfunc, format, ...) \
+   do { \
+       errfunc("\e[7m%s:%d `%s'\e[m "format,__FILE__, __LINE__,__func__,##__VA_ARGS__);\
+    } while (0)
+
+#define ERR_MSG(s,...)      ERR_LOG(err_msg,s,##__VA_ARGS__)
+#define ERR_RET(s,...)      ERR_LOG(err_ret,s,##__VA_ARGS__)
+#define ERR_SYS(s,...)      ERR_LOG(err_sys,s,##__VA_ARGS__)
+#define ERR_DUMP(s,...)     ERR_LOG(err_dump,s,##__VA_ARGS__)
+#define ERR_QUIT(s,...)     ERR_LOG(err_quit,s,##__VA_ARGS__)
+#define LOG_MSG(s,...)      ERR_LOG(log_msg,s,##__VA_ARGS__)
+#define LOG_MARK()          ERR_LOG(log_msg,"")
+
 #ifdef __cplusplus
 }
 #endif

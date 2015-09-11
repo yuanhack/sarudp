@@ -9,14 +9,128 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
-#define SkyBlue "\e[34m"
-#define ColorE     "\e[m"
+#define ColorRed    "\e[31m"
+#define ColorGre    "\e[32m"
+#define ColorYel    "\e[33m"
+#define ColorBlue   "\e[34m"
+#define ColorEnd    "\e[m"
 
 pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
 char rejectbuff[1024*10] = {0};
 
-void cb_peer_data_in(fe_t * fe)
+void request_handle(supeer_t *psar)
+{
+    recv_stor_t *pack = psar->synnow;
+    suhdr_t *phdr = &pack->recvhdr;
+
+    switch (phdr->type) {
+        case SU_RELIABLE:
+            if (psar->reliable_request_handle)
+                psar->reliable_request_handle(psar, (char*)pack->data, pack->len);
+            break;
+        case SU_ORDINARY:
+            if (psar->ordinary_request_handle)
+                psar->ordinary_request_handle(psar, (char*)pack->data, pack->len);
+            break;
+        default:
+            LOG_MSG("request type unknown %d", phdr->type);
+            free(pack);
+            return;
+    }
+
+    //char buff[32]; su_peer_request(psar, "hello", 5, buff, sizeof(buff));
+
+    //TODO: release
+    free(pack);
+}
+
+static void *thread_request_handle(void *v)
+{
+    supeer_t *psar = (supeer_t*)v;
+    struct list *synnode;
+    recv_stor_t *packet;
+    suhdr_t *phdr;
+
+    LOG_MARK();
+
+    for (;;) {
+        pthread_mutex_lock(&psar->lock);
+        while ((synnode = psar->synrecvls.next) == &psar->synrecvls)
+            pthread_cond_wait(&psar->syncond, &psar->lock);
+        list_remove(synnode);
+        pthread_mutex_unlock(&psar->lock);
+
+        // TODO: Have a request
+        packet = struct_entry(synnode, recv_stor_t, node);
+        phdr = &packet->recvhdr;
+
+        psar->synnow = packet;
+        request_handle(psar);
+        psar->synnow = 0;
+    }
+
+    return (void*)0;
+}
+
+static int thread_install(void *v)
+{
+    supeer_t *psar = (supeer_t*)v;
+
+    if (psar->tid)
+        return 0;
+
+    pthread_attr_t attr;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 1024*1024); //set stack size 1M
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if ((errno = pthread_create(&psar->tid, &attr, thread_request_handle, psar)) != 0) {
+        ERR_RET("supeer %x pthread_create error");
+        pthread_attr_destroy(&attr);
+        return (-1); 
+    } 
+
+    pthread_attr_destroy(&attr);
+
+    log_msg("supeer %x Install the asynchronous request processing thread", psar, (unsigned)psar->tid);
+
+    return 0;
+}
+
+int reliable_request_handle_install(supeer_t *psar, 
+        cb_supeer_receiver_t* reliable_request_handle)
+{
+    int ret;
+
+    pthread_mutex_lock(&psar->lock);
+    psar->reliable_request_handle = reliable_request_handle;
+    ret = thread_install(psar);
+    pthread_mutex_unlock(&psar->lock);
+    
+    return ret;
+}
+int ordinary_request_handle_install(supeer_t *psar, 
+        cb_supeer_receiver_t* ordinary_request_handle)
+{
+    int ret;
+
+    pthread_mutex_lock(&psar->lock);
+    psar->ordinary_request_handle = ordinary_request_handle;
+    ret = thread_install(psar);
+    pthread_mutex_unlock(&psar->lock);
+
+    return ret;
+}
+void reliable_request_handle_uninstall(supeer_t *psar)
+{
+}
+void ordinary_request_handle_uninstall(supeer_t *psar)
+{
+}
+
+static void peer_recv_handle(fe_t * fe)
 {
     int ret;
     SA4 addr;
@@ -25,16 +139,16 @@ void cb_peer_data_in(fe_t * fe)
     struct iovec    iovrecv[2] = {{0}}; /* assumed init to 0 */ 
     struct msghdr   msgrecv = {0};  /* assumed init to 0 */
     recv_stor_t *packet;
-
 recvagain:
     packet = calloc(1, sizeof(recv_stor_t) + REALDATAMAX);
     if (packet == 0) {
+        log_msg("peer %x ENOMEM", psar);
         ret = recvfrom(fe->fd, rejectbuff, sizeof(rejectbuff), 0, (SA*)&addr, &socklen); // reject data
         if (ret < 0 && errno == EAGAIN) {
             return;
         }
-#ifdef SU_DEBUG_PEER
-        err_ret("peer %x %d recv %s:%d bytes %d, but reject datas", psar,
+#ifdef SU_DEBUG_PEER_RECV
+        ERR_RET("peer %x %d recv %s:%d bytes %d, but reject datas", psar,
                 fe->fd, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port), ret);
 #endif
         return;
@@ -57,7 +171,7 @@ recvagain:
             free(packet);
             return;
         }
-        err_quit("recvmsg error %s %d", __FILE__, __LINE__);
+        ERR_QUIT("recvmsg error");
     }
 
 #ifdef SU_DEBUG_PEER_RECV
@@ -77,40 +191,59 @@ recvagain:
 
     packet->len = ret - sizeof(suhdr_t);
 
-    pthread_mutex_lock(&psar->lock);
+    SA4 *psrc, *pdst;
+    psrc = (SA4*)&packet->srcaddr;
+    pdst = (SA4*)&psar->destaddr;
 
-    if (act == SU_ACK && type == SU_RELIABLE) {
-        list_append(&psar->ackrecvls, &packet->node);
-    } else if (act == SU_SYN) {
+    pthread_mutex_lock(&psar->lock);
+    if (act == SU_SYN) {
+        if (psar->tid == 0) {
+            // There reject datas, not callback handler
+            pthread_mutex_unlock(&psar->lock);
+            LOG_MSG("reject packet");
+            free(packet);
+            goto recvagain;
+        }
+#ifdef SU_DEBUG_LIST
+        log_msg("peer %x append syn list "ColorRed"%p"ColorEnd" seq %d data len=%d", 
+                psar, packet, r->seq, packet->len);
+#endif
         list_append(&psar->synrecvls, &packet->node);
+        pthread_cond_broadcast(&psar->syncond);
+
+    } else if (act == SU_ACK && type == SU_RELIABLE 
+            && psrc->sin_addr.s_addr == pdst->sin_addr.s_addr
+            && psrc->sin_port == pdst->sin_port) {
+#ifdef SU_DEBUG_LIST
+        log_msg("peer %x append ack list "ColorRed"%p"ColorEnd" seq %d data len=%d", 
+                psar, packet, r->seq, packet->len);
+#endif
+        list_append(&psar->ackrecvls, &packet->node);
+        pthread_cond_broadcast(&psar->ackcond);
+
     } else {
         pthread_mutex_unlock(&psar->lock);
 #ifdef SU_DEBUG_PEER_RECV
-        log_msg("peer %x [%05d] recv %s:%d bytes %d is abnormal", psar,
+        log_msg("peer %x %d recv %s:%d bytes %d is abnormal", psar,
                 fe->fd, inet_ntoa(((SA4*)&packet->srcaddr)->sin_addr), 
                 ntohs(((SA4*)&packet->srcaddr)->sin_port), ret);
 #endif
         free(packet);
         return;
-    }
 
+    }
     pthread_mutex_unlock(&psar->lock);
 
-#ifdef SU_DEBUG_LIST
-    log_msg("peer %x appd node \e[31m%p\e[m seq %d data len=%d", psar, packet, r->seq, packet->len);
-#endif
-
-    pthread_cond_broadcast(&psar->ackcond);
     goto recvagain;
 }
 
 int su_peer_new(supeer_t *psar, 
-        const SA *ptoaddr, socklen_t servlen, cb_supeer_receiver_t* in)
+        const SA *ptoaddr, socklen_t servlen)
 {
     psar->fd = socket(ptoaddr->sa_family, SOCK_DGRAM, 0);
     if (psar->fd < 0) {
 #ifdef SU_DEBUG_PEER
-        err_ret("peer %x create failed, socket error", psar);
+        ERR_RET("peer %x create failed, socket error", psar);
 #endif
         return -1;
     }
@@ -124,14 +257,18 @@ int su_peer_new(supeer_t *psar,
     psar->rttinit = 0;
     psar->retry = 2; //RTT_MAXNREXMT;
 
-    psar->in = in;
-
     psar->ackwaitnum = 0;
     list_init(&psar->ackrecvls);
     list_init(&psar->synrecvls);
 
     pthread_mutex_init(&psar->lock, 0);
     pthread_cond_init(&psar->ackcond, 0);
+    pthread_cond_init(&psar->syncond, 0);
+
+    psar->tid = 0;
+    psar->synnow = 0;
+    psar->reliable_request_handle = 0;
+    psar->ordinary_request_handle = 0;
 
     pthread_mutex_lock(&emutex);
     if (sugem == 0) {
@@ -142,7 +279,7 @@ int su_peer_new(supeer_t *psar,
 
     memset(&psar->fe, 0, sizeof(fe_t));
     fe_init(&psar->fe, sugem, psar->fd);
-    fe_set(&psar->fe, EPOLLIN, cb_peer_data_in);
+    fe_set(&psar->fe, EPOLLIN, peer_recv_handle);
     fe_set(&psar->fe, EPOLLET, 0);
     Fe_em_add(&psar->fe);
 
@@ -163,6 +300,15 @@ void su_peer_rm(supeer_t *psar)
     pthread_cond_destroy(&psar->ackcond);
 }
 
+uint32_t get_new_seq(supeer_t *psar)
+{
+    uint32_t nseq;
+    pthread_mutex_lock(&psar->lock);
+    nseq = ++psar->seq;
+    pthread_mutex_unlock(&psar->lock);
+    return nseq;
+}
+
 ssize_t su_peer_send_act(supeer_t *psar, const void *outbuff, size_t outbytes)
 {
     ssize_t			n;
@@ -172,7 +318,7 @@ ssize_t su_peer_send_act(supeer_t *psar, const void *outbuff, size_t outbytes)
 
     pthread_mutex_lock(&psar->lock);
     sendhdr.act  = SU_SYN;
-    sendhdr.type = SU_GENERAL;
+    sendhdr.type = SU_ORDINARY;
     sendhdr.seq = ++psar->seq;
     sendhdr.ts = 0;
     msgsend.msg_name = (void*)&psar->destaddr;
@@ -250,13 +396,13 @@ ssize_t su_peer_send_recv_act(supeer_t *psar, const void *outbuff, size_t outbyt
 sendagain:
     sendhdr.ts = rtt_ts(&psar->rttinfo);
     if (sendmsg(psar->fd, &msgsend, 0) < 0) {
-        err_ret("su_peer_send_recv_act sendmsg error");
+        ERR_RET("su_peer_send_recv_act sendmsg error");
         goto error_ret;
     }
 
     waitsec = rtt_start(&psar->rttinfo);	/* calc timeout value & start timer */
 #ifdef	RTT_DEBUG
-    fprintf(stderr, "\e[31msend seq %4d: \e[m", sendhdr.seq);
+    fprintf(stderr, ColorRed "send seq %4d: " ColorEnd, sendhdr.seq);
     rtt_debug(&psar->rttinfo);
 #endif
 
@@ -266,9 +412,8 @@ sendagain:
 #ifdef SU_DEBUG_TIMEVERBOSE
     struct timeval now;
     gettimeofday(&now, 0);
-    //log_msg("\e[34mpthread_cond_timedwait : %u.%u time expire\e[m", abstime.tv_sec, abstime.tv_nsec);
-    log_msg( SkyBlue "pthread_cond_timedwait : %u.%u time expire" ColorE, abstime.tv_sec, abstime.tv_nsec);
-    log_msg( SkyBlue "pthread_cond_timedwait : %d.%d now time" ColorE, now.tv_sec, now.tv_usec*1000);
+    log_msg( ColorBlue "pthread_cond_timedwait : %u.%u time expire" ColorEnd, abstime.tv_sec, abstime.tv_nsec);
+    log_msg( ColorBlue "pthread_cond_timedwait : %d.%d now time" ColorEnd, now.tv_sec, now.tv_usec*1000);
 #endif
 
 timedwaitagain:
@@ -277,7 +422,7 @@ timedwaitagain:
 #ifdef SU_DEBUG_TIMEVERBOSE
         struct timeval now;
         gettimeofday(&now, 0);
-        log_msg(SkyBlue "pthread_cond_timedwait : %d.%d ack cond interrupt" ColorE, 
+        log_msg(ColorBlue "pthread_cond_timedwait : %d.%d ack cond interrupt" ColorEnd, 
                 now.tv_sec, now.tv_usec*1000);
 #endif
         node = psar->ackrecvls.next;
@@ -285,9 +430,7 @@ timedwaitagain:
             packet = struct_entry(node, recv_stor_t, node);
             r = &packet->recvhdr;
 
-            if (su_cmp_ack_SU_RELIABLE(&sendhdr, r)) {
-                break;
-            }
+            if (su_cmp_ack_SU_RELIABLE(&sendhdr, r)) { break; }
         }
         if ( node == &psar->ackrecvls ) {
             /* Be careful of the lock, locked -> timedwait -> unlock */
@@ -308,7 +451,7 @@ timedwaitagain:
 #endif
 
 #ifdef	RTT_DEBUG
-        fprintf(stderr, "\e[31mrecv seq %4d \e[m\n", precvhdr->seq);
+        fprintf(stderr, ColorRed "recv seq %4d \n" ColorEnd, precvhdr->seq);
 #endif
         // TODO: SU_RELIABLE received response, copy to user's buffer
         memcpy(inbuff, packet->data, n > inbytes ? inbytes : n);
@@ -322,29 +465,28 @@ timedwaitagain:
 #ifdef SU_DEBUG_TIMEVERBOSE
         struct timeval now;
         gettimeofday(&now, 0);
-        log_msg(SkyBlue "pthread_cond_timedwait : %u.%u ETIMEOUT have expired" ColorE, 
+        log_msg(ColorBlue "pthread_cond_timedwait : %u.%u ETIMEOUT have expired" ColorEnd, 
                 now.tv_sec, now.tv_usec*1000);
 #endif
         if (rtt_timeout(&psar->rttinfo) < 0) {
-            err_msg("\e[33mno response from server, giving up\e[m");
+            err_msg(ColorYel "no response from server, giving up" ColorEnd);
             psar->rttinit = 0;	/* reinit in case we're called again */
             errno = ETIMEDOUT;
             goto error_ret;
         }
 #ifdef	RTT_DEBUG
-        err_msg("\e[31m     seq %4d timeout, retransmitting\e[m", sendhdr.seq);
+        err_msg(ColorRed "     seq %4d timeout, retransmitting %d" ColorEnd, sendhdr.seq, ++retransmit);
 #endif
         goto sendagain;
     } else {
         errno = ret;
-        err_ret(" su_peer_send_recv_act unknown error[%d]");
+        ERR_RET(" su_peer_send_recv_act unknown error[%d]", ret);
         goto error_ret;
     }
 
     /* calculate & store new RTT estimator values */
     rtt_stop(&psar->rttinfo, rtt_ts(&psar->rttinfo) - precvhdr->ts);
 
-    //void su_peer_list_empty(struct list *l);
     void su_peer_list_empty(supeer_t *su, struct list *l);
 
     if (--psar->ackwaitnum == 0) {
@@ -352,10 +494,11 @@ timedwaitagain:
     }
     pthread_mutex_unlock(&psar->lock);
 
-    free(packet);
 #ifdef SU_DEBUG_LIST
-    log_msg("peer %x free node \e[31m%p\e[m seq %d", psar, packet);
+    log_msg("peer %x free node " ColorRed "%p seq %d" ColorEnd, psar, packet, sendhdr.seq);
 #endif
+
+    free(packet);
 
     return(n);	/* return size of received datagram */
 
@@ -377,13 +520,48 @@ void su_peer_list_empty(supeer_t *su, struct list *l)
         node = node->next;
         free(realnode);
 #ifdef SU_DEBUG_LIST
-        //supeer_t *su = struct_entry(l, supeer_t, ackrecvls);
-        log_msg("peer %x free recv_stor_t node \e[31m%p\e[m", su, realnode);
+        LOG_MSG("peer %x free recv_stor_t node " ColorRed "%p" ColorEnd, su, realnode);
 #endif
     } 
 }
 
-ssize_t su_peer_send_recv(supeer_t *psar, const void *outbuff, size_t outbytes,
+ssize_t su_peer_reply_act(supeer_t *psar, const void *outbuff, size_t outbytes)
+{
+    if (psar->synnow == 0) {
+        err_msg("peer %x is no request data");
+        return -1;
+    }
+
+    ssize_t			n;
+    struct iovec	iovsend[2] = {{0}};
+    struct msghdr	msgsend = {0};	/* assumed init to 0 */
+    recv_stor_t *pack = psar->synnow;
+    suhdr_t answerhdr = pack->recvhdr;
+
+    answerhdr.act  = SU_ACK;
+    msgsend.msg_name = (void*)&pack->srcaddr;
+    msgsend.msg_namelen = pack->srclen;
+    msgsend.msg_iov = &iovsend[0];
+    msgsend.msg_iovlen = 2;
+
+    iovsend[0].iov_base = &answerhdr;
+    iovsend[0].iov_len = sizeof(suhdr_t);
+    iovsend[1].iov_base = (void*)outbuff;
+    iovsend[1].iov_len = outbytes;
+
+    n = sendmsg(psar->fd, &msgsend, 0);
+    if (n != sizeof(suhdr_t) + outbytes)
+        return(-1);
+
+    return(outbytes);
+}
+
+ssize_t su_peer_reply(supeer_t *psar, const void *outbuff, size_t outbytes)
+{
+    return su_peer_reply_act(psar, outbuff, outbytes);
+}
+
+ssize_t su_peer_request(supeer_t *psar, const void *outbuff, size_t outbytes,
         void *inbuff, size_t inbytes)
 {
     return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 0);

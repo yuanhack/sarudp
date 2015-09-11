@@ -16,7 +16,7 @@ void sar_cli_send_recv(FILE *fp, supeer_t *psar)
             return ;
         }
 
-        n = su_peer_send_recv(psar, sendline, strlen(sendline), recvline, MAXLINE);
+        n = su_peer_request(psar, sendline, strlen(sendline), recvline, MAXLINE);
         if (n < 0)
             err_ret("su_peer_send_recv error");
 

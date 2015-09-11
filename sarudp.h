@@ -23,13 +23,14 @@
 #pragma pack(1)
 
 typedef struct hdr {
-
+    /* packet protocol action  */
 #define     SU_SYN      0xff    /* request */
 #define     SU_ACK      0xfe    /* respnose */
     uint8_t   act;              /* protocol action */
-
-#define     SU_GENERAL  0       /* general packet, foreign host Don't need to reply */
-#define     SU_RELIABLE 1       /* reliable packet, foreign host Must reply */
+    
+    /* packet protocol type */
+#define     SU_ORDINARY 0       /* ordinary, foreign host Don't need to reply */
+#define     SU_RELIABLE 1       /* reliable, foreign host Must reply */
     uint8_t   type;             /* protocol type */
 
     uint32_t	seq;	        /* sequence # */
@@ -44,6 +45,8 @@ typedef struct sockaddr_in6 SA6;
 typedef struct sar_udp_peer supeer_t;
 typedef union { SA4 addr4; SA6 addr6; } SAUN;
 
+typedef struct recv_stor recv_stor_t;
+
 typedef void cb_supeer_receiver_t(supeer_t *ps, char* buff, int len);
 
 typedef struct data {
@@ -52,14 +55,14 @@ typedef struct data {
 } data_t;
 
 /* recv storage data, list node */
-typedef struct recv_stor {
+struct recv_stor {
     struct list node;
     SAUN        srcaddr;
     socklen_t   srclen;
     suhdr_t     recvhdr;
     int         len;
     uint8_t     data[];
-} recv_stor_t;
+};
 
 /* SYN/ACK/Retransfer UDP peer manager */
 struct sar_udp_peer {
@@ -74,26 +77,33 @@ struct sar_udp_peer {
 
     /* event driver */
     fe_t fe;
-    cb_supeer_receiver_t * in;
+    cb_supeer_receiver_t * reliable_request_handle;
+    cb_supeer_receiver_t * ordinary_request_handle;
     pthread_t tid;
     pthread_mutex_t lock;
     pthread_cond_t ackcond;
+    pthread_cond_t syncond;
 
     /* datas */
     int         ackwaitnum;     /* SU_RELIABLE Request number */
     struct list ackrecvls;      /* SU_RELIABLE Reply of the foreign host */
     struct list synrecvls;      /* Receive all foreign host the active data */
+    recv_stor_t *synnow;
 };
 
-int su_peer_new(supeer_t *psar, 
-        const SA *ptoaddr, socklen_t servlen, cb_supeer_receiver_t* in);
+int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen);
 void su_peer_rm(supeer_t *psar);
 
 ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes);
-ssize_t su_peer_send_recv(supeer_t *psar, const void *outbuff, size_t outbytes,
+ssize_t su_peer_request(supeer_t *psar, const void *outbuff, size_t outbytes,
         void *inbuff, size_t inbytes);
 
 ssize_t su_peer_send_recv_retry(supeer_t *psar, const void *outbuff, size_t outbytes,
         void *inbuff, size_t inbytes);
+
+int reliable_request_handle_install(supeer_t *psar, cb_supeer_receiver_t* reliable_request_handle);
+int ordinary_request_handle_install(supeer_t *psar, cb_supeer_receiver_t* reliable_request_handle);
+
+ssize_t su_peer_reply(supeer_t *psar, const void *outbuff, size_t outbytes);
 
 #endif /* __YH_SARUDP_H__ */
