@@ -65,7 +65,7 @@ err_quit(const char *fmt, ...);
 
 #define ERR_LOG(errfunc, format, ...) \
    do { \
-       errfunc("\e[7m%s:%d `%s'\e[m "format,__FILE__, __LINE__,__func__,##__VA_ARGS__);\
+       errfunc("\e[7m%s:%d `%s'\e[m "format,__FILE__,__LINE__,__func__,##__VA_ARGS__);\
     } while (0)
 
 #define ERR_MSG(s,...)      ERR_LOG(err_msg,s,##__VA_ARGS__)

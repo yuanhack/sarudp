@@ -5,7 +5,7 @@
 void sar_cli_send(FILE *fp, supeer_t *psar);
 void sar_cli_send_recv(FILE *fp, supeer_t *psar);
 
-void udpin1(supeer_t *psar, char *buff, int len)
+void udpin_reliable(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
         printf("1 recv svr len %d info %s\n", len, buff);
@@ -15,12 +15,11 @@ void udpin1(supeer_t *psar, char *buff, int len)
         write(1, recvbuff, len);
     
 }
-void udpin2(supeer_t *psar, char *buff, int len)
+void udpin_ordinary(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
         printf("2 recv svr len %d info %s\n", len, buff);
     su_peer_reply(psar, "world\n", 6);
-    su_peer_send(psar, "world\n", 6);
 }
   
 int
@@ -46,8 +45,8 @@ main(int argc, char **argv)
     if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_quit("sarudp_init error");
 
-    reliable_request_handle_install(&sar, udpin1);
-    ordinary_request_handle_install(&sar, udpin2);
+    reliable_request_handle_install(&sar, udpin_reliable);
+    ordinary_request_handle_install(&sar, udpin_ordinary);
 
 	sar_cli_send_recv(stdin, &sar);
 	//sar_cli_send(stdin, &sar);
