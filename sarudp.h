@@ -17,7 +17,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#define REALDATAMAX  1024
+#define REALDATAMAX  1024        /* datagram max size */
+#define CACHETIMEOUT 10         /* reliable request-result cached seconds */
+
 
 #pragma pack(push)
 #pragma pack(1)

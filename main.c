@@ -2,6 +2,8 @@
 #include "domain_parse.h"
 #include "wrapfunc.h"
 
+#include <sys/signal.h>
+
 void sar_cli_send(FILE *fp, supeer_t *psar);
 void sar_cli_send_recv(FILE *fp, supeer_t *psar);
 
@@ -9,10 +11,11 @@ void udpin_reliable(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
         printf("1 recv svr len %d info %s\n", len, buff);
-    su_peer_reply(psar, "hello\n", 6);
-    char recvbuff[32];
-    if ((len = su_peer_request(psar, "hello\n", 6, recvbuff, sizeof(recvbuff))) > 0)
-        write(1, recvbuff, len);
+    su_peer_reply(psar, buff, len);
+
+//    char recvbuff[32];
+//    if ((len = su_peer_request(psar, "hello\n", 6, recvbuff, sizeof(recvbuff))) > 0)
+//        write(1, recvbuff, len);
     
 }
 void udpin_ordinary(supeer_t *psar, char *buff, int len)
@@ -21,13 +24,21 @@ void udpin_ordinary(supeer_t *psar, char *buff, int len)
         printf("2 recv svr len %d info %s\n", len, buff);
     su_peer_reply(psar, "world\n", 6);
 }
-  
+
+void sigint(int no)
+{
+    log_msg("\nSIGINT");
+    exit(0);
+}
+
 int
 main(int argc, char **argv)
 {
 	struct sockaddr_in	servaddr;
     supeer_t sar;
     char ip[256], errinfo[256];
+
+    signal(SIGINT, sigint);
 
 	if (argc != 2 && argc != 3)
 		err_quit("usage: udpcli <Destination> [Port Default 7]");

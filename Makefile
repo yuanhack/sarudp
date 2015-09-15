@@ -5,13 +5,15 @@ CFLAGS += -g
 CFLAGS += -D_REENTRANT -Wall
 CLIBS = -lpthread
 
+#CFLAGS += -Dmodule_exact_match_address
+
 CFLAGS += -Wno-unused-variable
 CFLAGS += -Wno-unused-but-set-variable
 
-#CFLAGS += -DSU_DEBUG_PEER
+CFLAGS += -DSU_DEBUG_PEER
 CFLAGS += -DSU_DEBUG_PEER_RECV
 CFLAGS += -DSU_DEBUG_LIST
-#CFLAGS += -DSU_DEBUG_TIMEDWAIT
+#CFLAGS += -D SU_DEBUG_TIMEDWAIT
 #CFLAGS += -DSU_DEBUG_TIMEVERBOSE
 
 CFLAGS += -DRTT_DEBUG

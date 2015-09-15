@@ -19,8 +19,7 @@ pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
 char rejectbuff[1024*10] = {0};
 
-static void
-save_reliable_ack (supeer_t *psar, const void *outbuff, size_t outbytes)
+static void save_reliable_ack (supeer_t *psar, const void *outbuff, size_t outbytes)
 {
     cache_t * newack = calloc(1, sizeof(cache_t) + outbytes);
     if (newack == 0)
@@ -30,8 +29,48 @@ save_reliable_ack (supeer_t *psar, const void *outbuff, size_t outbytes)
     memcpy(newack->pack.data, outbuff, outbytes);
     newack->pack.len = outbytes;
     list_append(&psar->lsackcache, &newack->pack.node);
+#ifdef SU_DEBUG_LIST
+    LOG_MSG("peer %x add cache %p time %u", psar, newack, newack->ts);
+#endif
     return;
 }
+static void check_rm_reliable_ack (supeer_t *psar)
+{
+    time_t t;
+
+    time(&t);
+    cache_t *frees, *cache = container_of 
+        ( list_head(&psar->lsackcache, frames_t, node), cache_t, pack );
+
+    while ( &psar->lsackcache != &cache->pack.node ) {
+        if ( abs(t-cache->ts) < CACHETIMEOUT ) break;
+        frees = cache;
+        cache = container_of 
+            ( list_next(&cache->pack, frames_t, node), cache_t, pack );
+        list_remove(&frees->pack.node);
+#ifdef SU_DEBUG_LIST
+        LOG_MSG("peer %x free cache_t node " ColorRed "%p" ColorEnd " timeout[%u %u]", 
+                psar, frees, t, frees->ts+CACHETIMEOUT);
+#endif
+        free(frees);
+    }
+}
+static void su_peer_list_empty(supeer_t *psar, struct list *l)
+{
+    frames_t *realnode;
+    struct list *node = l->next;
+    while ( node != l ) {
+        list_remove(node);
+        realnode = container_of(node, frames_t, node);
+        node = node->next;
+        free(realnode);
+#ifdef SU_DEBUG_LIST
+        LOG_MSG("peer %x free frames_t node " ColorRed "%p" ColorEnd, 
+                psar, realnode);
+#endif
+    }
+}
+
 
 void request_handle(supeer_t *psar)
 {
@@ -41,10 +80,10 @@ void request_handle(supeer_t *psar)
     psrc = (SA4*)&pack->srcaddr;
     pdst = (SA4*)&psar->destaddr;
 
-    /* TODO: * important
-     * Check filter address and port */
+#ifdef module_exact_match_address
+    /* TODO: important * Check filter address and port */
     if ( psrc->sin_addr.s_addr != pdst->sin_addr.s_addr ||
-            psrc->sin_port != pdst->sin_port) {
+            psrc->sin_port != pdst->sin_port ) {
 #ifdef SU_DEBUG_PEER_RECV
         log_msg(ColorYel"peer %x reject from %s:%d data len %d"ColorEnd, psar,
                 inet_ntoa(psrc->sin_addr), ntohs(psrc->sin_port), pack->len);
@@ -52,6 +91,7 @@ void request_handle(supeer_t *psar)
         free(pack);
         return;
     }
+#endif
 
     switch (phdr->type) {
         case SU_RELIABLE:
@@ -63,7 +103,7 @@ void request_handle(supeer_t *psar)
                 psar->ordinary_request_handle(psar, (char*)pack->data, pack->len);
             } break;
         default:
-            LOG_MSG("request type unknown %d", phdr->type);
+            LOG_MSG("peer %x request type unknown %d", (uint64_t)pthread_self(), phdr->type);
             free(pack);
             return;
     }
@@ -77,15 +117,26 @@ static void *thread_request_handle(void *v)
     frames_t *packet;
     suhdr_t *phdr;
 
+    struct timeval now;
+    int ret;
+    struct timespec abstime = {0};
+
     for (;;) {
         pthread_mutex_lock(&psar->lock);
-        while ((synnode = psar->synrecvls.next) == &psar->synrecvls)
-            pthread_cond_wait(&psar->syncond, &psar->lock);
+        while ((synnode = psar->synrecvls.next) == &psar->synrecvls) {
+            maketimeout_seconds(&abstime, 10);
+            ret = pthread_cond_timedwait(&psar->syncond, &psar->lock, &abstime);
+            if ( ret == ETIMEDOUT ) {
+                check_rm_reliable_ack(psar);
+            }
+        }
         list_remove(synnode);
         pthread_mutex_unlock(&psar->lock);
 
+        check_rm_reliable_ack(psar);
+
         // TODO: Have a request
-        packet = struct_entry(synnode, frames_t, node);
+        packet = container_of(synnode, frames_t, node);
         phdr = &packet->recvhdr;
 
         psar->synnowpack = packet;
@@ -110,14 +161,18 @@ static int thread_install(void *v)
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     if ((errno = pthread_create(&psar->tid, &attr, thread_request_handle, psar)) != 0) {
-        ERR_RET("supeer %x pthread_create error");
+#ifdef SU_DEBUG_PEER
+        err_ret("peer %x pthread_create error");
+#endif
         pthread_attr_destroy(&attr);
         return (-1);
     }
 
     pthread_attr_destroy(&attr);
 
-    log_msg("supeer %x Install the asynchronous request processing thread", psar, (unsigned)psar->tid);
+#ifdef SU_DEBUG_PEER
+    log_msg("peer %x Install the asynchronous request processing thread", psar, (unsigned)psar->tid);
+#endif
 
     return 0;
 }
@@ -158,7 +213,7 @@ static void su_peer_recv_handle(fe_t * fe)
     int ret;
     SA4 addr;
     socklen_t socklen = sizeof(SA4);
-    supeer_t *psar = struct_entry(fe, supeer_t, fe);
+    supeer_t *psar = container_of(fe, supeer_t, fe);
     struct iovec    iovrecv[2] = {{0}}; /* assumed init to 0 */
     struct msghdr   msgrecv = {0};  /* assumed init to 0 */
     frames_t *packet;
@@ -442,8 +497,10 @@ sendagain:
 #ifdef SU_DEBUG_TIMEVERBOSE
     struct timeval now;
     gettimeofday(&now, 0);
-    log_msg( ColorBlue "pthread_cond_timedwait : %u.%u time expire" ColorEnd, abstime.tv_sec, abstime.tv_nsec);
-    log_msg( ColorBlue "pthread_cond_timedwait : %d.%d now time" ColorEnd, now.tv_sec, now.tv_usec*1000);
+    log_msg( ColorBlue "pthread_cond_timedwait : %u.%u time expire" ColorEnd, 
+            abstime.tv_sec, abstime.tv_nsec);
+    log_msg( ColorBlue "pthread_cond_timedwait : %d.%d now time" ColorEnd, 
+            now.tv_sec, now.tv_usec*1000);
 #endif
 
 timedwaitagain:
@@ -457,9 +514,8 @@ timedwaitagain:
 #endif
         node = psar->ackrecvls.next;
         for (; node != &psar->ackrecvls; node = node->next) {
-            packet = struct_entry(node, frames_t, node);
+            packet = container_of(node, frames_t, node);
             r = &packet->recvhdr;
-
             if (su_cmp_ack_SU_RELIABLE(&sendhdr, r)) { break; }
         }
         if ( node == &psar->ackrecvls ) {
@@ -505,7 +561,8 @@ timedwaitagain:
             goto error_ret;
         }
 #ifdef	RTT_DEBUG
-        err_msg(ColorRed "     seq %4d timeout, retransmitting %d" ColorEnd, sendhdr.seq, ++retransmit);
+        err_msg(ColorRed "     seq %4d timeout, retransmitting %d" ColorEnd, 
+                sendhdr.seq, ++retransmit);
 #endif
         goto sendagain;
     } else {
@@ -516,8 +573,6 @@ timedwaitagain:
 
     /* calculate & store new RTT estimator values */
     rtt_stop(&psar->rttinfo, rtt_ts(&psar->rttinfo) - precvhdr->ts);
-
-    void su_peer_list_empty(supeer_t *su, struct list *l);
 
     if (--psar->ackwaitnum == 0) {
         su_peer_list_empty(psar, &psar->ackrecvls);
@@ -538,21 +593,6 @@ error_ret:
     }
     pthread_mutex_unlock(&psar->lock);
     return(-1);
-}
-
-void su_peer_list_empty(supeer_t *su, struct list *l)
-{
-    frames_t *realnode;
-    struct list *node = l->next;
-    while ( node != l ) {
-        list_remove(node);
-        realnode = struct_entry(node, frames_t, node);
-        node = node->next;
-        free(realnode);
-#ifdef SU_DEBUG_LIST
-        LOG_MSG("peer %x free frames_t node " ColorRed "%p" ColorEnd, su, realnode);
-#endif
-    }
 }
 
 static ssize_t
@@ -584,7 +624,8 @@ su_peer_reply_act(supeer_t *psar, const void *outbuff, size_t outbytes)
     if (n != sizeof(suhdr_t) + outbytes)
         return(-1);
 
-    save_reliable_ack(psar, outbuff, outbytes);
+    if (answerhdr.type == SU_RELIABLE)
+        save_reliable_ack(psar, outbuff, outbytes);
 
     return(outbytes);
 }

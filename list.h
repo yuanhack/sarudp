@@ -30,10 +30,6 @@ extern "C"
      })
 #endif
 
-#ifndef struct_entry
-#define struct_entry(ptr, type,  member) container_of(ptr, type, member)
-#endif
-
 #define LIST_HEAD_INIT(name)    {&(name), &(name)}
 
 struct list
@@ -55,28 +51,25 @@ static inline int list_empty(struct list *list)
 static inline void list_insert_prev(struct list* link, struct list *newn)
 {
     newn->prev = link->prev;
-    newn->next = newn;
-    newn->prev->next = link;
-    newn->next->prev = link;
+    newn->next = link;
+    newn->prev->next = newn;
+    newn->next->prev = newn;
 }
 static inline void list_insert_next(struct list* link, struct list *newn)
 {
-    newn->next = link->next;
     newn->prev = link;
-    newn->next->prev = newn;
+    newn->next = link->next;
     newn->prev->next = newn;
+    newn->next->prev = newn;
 }
 
 /**********************************************************
   功能: 将new_link节点插入到list链表中
   表头作为哨兵 插入表头之后第一个位置
  **********************************************************/
-static inline void list_insert(struct list *link, struct list *new_link)
+static inline void list_insert(struct list *list, struct list *new_link)
 {
-    new_link->prev       = link->prev;
-    new_link->next       = link;
-    new_link->prev->next = new_link;
-    new_link->next->prev = new_link;
+    list_insert_next(list, new_link);
 }
 
 /**********************************************************
@@ -85,7 +78,7 @@ static inline void list_insert(struct list *link, struct list *new_link)
  **********************************************************/
 static inline void list_append(struct list *list, struct list *new_link)
 {
-    list_insert(list->prev, new_link);
+    list_insert_prev(list, new_link);
 }
 
 /**********************************************************
