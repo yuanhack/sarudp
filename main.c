@@ -53,8 +53,11 @@ main(int argc, char **argv)
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 
-    if (su_peer_new((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
-        err_quit("sarudp_init error");
+//    if (su_peer_create((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
+//        err_quit("su_peer_create error");
+
+    if (su_peer_create_bind((supeer_t*)&sar, 9999, (SA*)&servaddr, sizeof(servaddr)) < 0)
+        err_sys("su_peer_create_bind error");
 
     reliable_request_handle_install(&sar, udpin_reliable);
     ordinary_request_handle_install(&sar, udpin_ordinary);

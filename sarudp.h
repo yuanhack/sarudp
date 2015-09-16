@@ -3,9 +3,11 @@
 
 #include "unprtt.h"
 #include "wrapfunc.h"
+#include "list.h"
+
 #include "yherror.h"
 #include "yhevent.h"
-#include "list.h"
+#include "yhrbtree.h"
 
 #include <pthread.h>
 #include <sys/socket.h>
@@ -17,20 +19,20 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#define REALDATAMAX  1024        /* datagram max size */
-#define CACHETIMEOUT 10         /* reliable request-result cached seconds */
-
+#define REALDATAMAX  1024       /* datagram max size */
+#define CACHETIMEOUT 90         /* reliable request-result cached seconds */
 
 #pragma pack(push)
 #pragma pack(1)
 
+/* protocol head */
 typedef struct hdr {
-    /* packet protocol action  */
+    /* packet action  */
 #define     SU_SYN      0xff    /* request */
 #define     SU_ACK      0xfe    /* respnose */
     uint8_t   act;              /* protocol action */
     
-    /* packet protocol type */
+    /* packet type */
 #define     SU_ORDINARY 0       /* ordinary, foreign host Don't need to reply */
 #define     SU_RELIABLE 1       /* reliable, foreign host Must reply */
     uint8_t   type;             /* protocol type */
@@ -66,8 +68,15 @@ typedef struct frames {
 
 typedef struct cache {
     time_t    ts;
+    struct rb_node rbn;
     frames_t  pack;
 } cache_t;
+typedef struct rb_key_cache {
+    SAUN destaddr;
+    socklen_t destlen;
+    uint32_t  seq;
+} rb_key_cache_t;
+
 
 /* SYN/ACK/Retransfer UDP peer manager */
 struct sar_udp_peer {
@@ -89,13 +98,17 @@ struct sar_udp_peer {
     pthread_cond_t ackcond;
     pthread_cond_t syncond;
 
-    /* datas */
     int         ackwaitnum;     /* SU_RELIABLE Requester number */
+
+    /* frames_t list */
     struct list ackrecvls;      /* SU_RELIABLE Reply of the foreign host */
     struct list synrecvls;      /* Receive all foreign host the active data */
 
-    frames_t *synnowpack;
-    struct list lsackcache;      /* The cache results  */
+    frames_t *synnowpack;       /* Currently working with request (syn) */
+
+    /* container cache_t */
+    struct list lsackcache;     /* The cache results for timeout check  */
+    rb_root_t rbackcache;  /* The cache results for re-syn search  */
 };
 
 int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen);
@@ -109,5 +122,6 @@ ssize_t su_peer_reply(supeer_t *psar, const void *outbuff, size_t outbytes);
 int reliable_request_handle_install(supeer_t *psar, cb_supeer_receiver_t* reliable_request_handle);
 int ordinary_request_handle_install(supeer_t *psar, cb_supeer_receiver_t* reliable_request_handle);
 
+int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t servlen);
 
 #endif /* __YH_SARUDP_H__ */
