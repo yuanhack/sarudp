@@ -10,19 +10,14 @@ void sar_cli_send_recv(FILE *fp, supeer_t *psar);
 void udpin_reliable(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
-        printf("1 recv svr len %d info %s\n", len, buff);
+        printf("reliable recv len %d info "ColorRed"%s\n"ColorEnd, len, buff);
     su_peer_reply(psar, buff, len);
-
-//    char recvbuff[32];
-//    if ((len = su_peer_request(psar, "hello\n", 6, recvbuff, sizeof(recvbuff))) > 0)
-//        write(1, recvbuff, len);
-    
 }
 void udpin_ordinary(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
-        printf("2 recv svr len %d info %s\n", len, buff);
-    su_peer_reply(psar, "world\n", 6);
+        printf("ordinary recv len %d info "ColorGre"%s\n"ColorEnd, len, buff);
+    su_peer_reply(psar, buff, len);
 }
 
 void sigint(int no)
@@ -53,17 +48,21 @@ main(int argc, char **argv)
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 
-//    if (su_peer_create((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
-//        err_quit("su_peer_create error");
-
-    if (su_peer_create_bind((supeer_t*)&sar, 9999, (SA*)&servaddr, sizeof(servaddr)) < 0)
+#if 0
+    if (su_peer_create((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
+        err_quit("su_peer_create error");
+#else
+    if (su_peer_create_bind((supeer_t*)&sar, 10001, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_sys("su_peer_create_bind error");
+#endif
 
-    reliable_request_handle_install(&sar, udpin_reliable);
-    ordinary_request_handle_install(&sar, udpin_ordinary);
+    su_peer_reliable_request_handle_install(&sar, udpin_reliable);
+    su_peer_ordinary_request_handle_install(&sar, udpin_ordinary);
 
 	sar_cli_send_recv(stdin, &sar);
-	//sar_cli_send(stdin, &sar);
+	sar_cli_send(stdin, &sar);
+
+    while (1) sleep(1);
 
     exit(0);
 }

@@ -20,7 +20,13 @@
 #include <sys/types.h>
 
 #define REALDATAMAX  1024       /* datagram max size */
-#define CACHETIMEOUT 90         /* reliable request-result cached seconds */
+#define CACHETIMEOUT 120         /* reliable request-result cached seconds */
+
+#define ColorRed    "\e[31m"
+#define ColorGre    "\e[32m"
+#define ColorYel    "\e[33m"
+#define ColorBlue   "\e[34m"
+#define ColorEnd    "\e[m"
 
 #pragma pack(push)
 #pragma pack(1)
@@ -49,7 +55,7 @@ typedef struct sockaddr_in6 SA6;
 typedef struct sar_udp_peer supeer_t;
 typedef union { SA4 addr4; SA6 addr6; } SAUN;
 
-typedef void cb_supeer_receiver_t(supeer_t *ps, char* buff, int len);
+typedef void cb_su_peer_receiver_t(supeer_t *ps, char* buff, int len);
 
 typedef struct data {
     int         len;
@@ -91,36 +97,44 @@ struct sar_udp_peer {
 
     /* event driver */
     fe_t fe;
-    cb_supeer_receiver_t * reliable_request_handle;
-    cb_supeer_receiver_t * ordinary_request_handle;
+    cb_su_peer_receiver_t * reliable_request_handle;
+    cb_su_peer_receiver_t * ordinary_request_handle;
+
     pthread_t tid;
+
     pthread_mutex_t lock;
     pthread_cond_t ackcond;
     pthread_cond_t syncond;
 
     int         ackwaitnum;     /* SU_RELIABLE Requester number */
 
-    /* frames_t list */
+    /* frames_t list: foreign respnose */
     struct list ackrecvls;      /* SU_RELIABLE Reply of the foreign host */
-    struct list synrecvls;      /* Receive all foreign host the active data */
 
-    frames_t *synnowpack;       /* Currently working with request (syn) */
+    /* frames_t list: foreign request  */
+    struct list synrecvls;      /* Receive foreign host the active request */
+    frames_t *synnowpack;       /* Currently working with active request (syn) */
 
-    /* container cache_t */
+    /* container cache_t: foreign reply result datas */
     struct list lsackcache;     /* The cache results for timeout check  */
-    rb_root_t rbackcache;  /* The cache results for re-syn search  */
+    rb_root_t rbackcache;       /* The cache results for re-syn search  */
+    pthread_mutex_t cachelock;
 };
 
-int su_peer_new(supeer_t *psar, const SA *ptoaddr, socklen_t servlen);
-void su_peer_rm(supeer_t *psar);
+int  su_peer_create(supeer_t *psar, const SA *ptoaddr, socklen_t servlen);
+int  su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t servlen);
+void su_peer_destroy(supeer_t *psar);
 
 ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes);
 ssize_t su_peer_request(supeer_t *psar, const void *outbuff, size_t outbytes, void *inbuff, size_t inbytes);
 ssize_t su_peer_request_retry(supeer_t *psar, const void *outbuff, size_t outbytes, void *inbuff, size_t inbytes);
+
 ssize_t su_peer_reply(supeer_t *psar, const void *outbuff, size_t outbytes);
 
-int reliable_request_handle_install(supeer_t *psar, cb_supeer_receiver_t* reliable_request_handle);
-int ordinary_request_handle_install(supeer_t *psar, cb_supeer_receiver_t* reliable_request_handle);
+int  su_peer_reliable_request_handle_install(supeer_t *psar, cb_su_peer_receiver_t* reliable_request_handle);
+int  su_peer_ordinary_request_handle_install(supeer_t *psar, cb_su_peer_receiver_t* ordinary_request_handle);
+void su_peer_reliable_request_handle_uninstall(supeer_t *psar);
+void su_peer_ordinary_request_handle_uninstall(supeer_t *psar);
 
 int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t servlen);
 

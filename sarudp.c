@@ -9,12 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-
-#define ColorRed    "\e[31m"
-#define ColorGre    "\e[32m"
-#define ColorYel    "\e[33m"
-#define ColorBlue   "\e[34m"
-#define ColorEnd    "\e[m"
+#include <string.h>
 
 pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
@@ -26,33 +21,52 @@ static inline int search_in4_addr_seq_cmp(rb_key_cache_t *r1, rb_key_cache_t *r2
     struct sockaddr_in *i1 = (SA4*)&r1->destaddr;		/* Internet 4 address, port  */
     struct sockaddr_in *i2 = (SA4*)&r2->destaddr;		
 
+#ifdef module_exact_match_address
+    return (r1->seq - r2->seq);
+#else
     if (i1->sin_addr.s_addr == i2->sin_addr.s_addr) {
         if (i1->sin_port == i2->sin_port) {
             return (r1->seq - r2->seq);
         } return (i1->sin_port - i1->sin_port) ;
     } return (i1->sin_addr.s_addr - i1->sin_addr.s_addr);
+#endif
 }
-static inline int search_in6_addr_seq_cmp(rb_key_cache_t *r1, rb_key_cache_t *r2)
+static inline int search_cache_key_in6_addr_seq_cmp_onebyone(rb_key_cache_t *r1, rb_key_cache_t *r2)
 {
     struct in6_addr *i1 = &((SA6*)&r1->destaddr)->sin6_addr; /* Internet 6 only address */
     struct in6_addr *i2 = &((SA6*)&r2->destaddr)->sin6_addr; 
+
+#ifndef module_exact_match_address
     if (i1->__in6_u.__u6_addr32[0] == i2->__in6_u.__u6_addr32[0]) {
         if (i1->__in6_u.__u6_addr32[1] == i2->__in6_u.__u6_addr32[1]) {
             if (i1->__in6_u.__u6_addr32[2] == i2->__in6_u.__u6_addr32[2]) {
                 if (i1->__in6_u.__u6_addr32[3] == i2->__in6_u.__u6_addr32[3]) {
                     if (((SA6*)&r1->destaddr)->sin6_port == ((SA6*)&r2->destaddr)->sin6_port) {
+#endif
                         return r1->seq - r2->seq;
+#ifndef module_exact_match_address
                     } return (((SA6*)&r1->destaddr)->sin6_port - ((SA6*)&r2->destaddr)->sin6_port);
                 } return (i1->__in6_u.__u6_addr32[3] - i2->__in6_u.__u6_addr32[3]);
             } return (i1->__in6_u.__u6_addr32[2] - i2->__in6_u.__u6_addr32[2]);
         } return (i1->__in6_u.__u6_addr32[1] - i2->__in6_u.__u6_addr32[1]);
     } return (i1->__in6_u.__u6_addr32[0] - i2->__in6_u.__u6_addr32[0]);
+#endif
+}
+static inline int search_cache_key_in6_addr_seq_cmp(rb_key_cache_t *r1, rb_key_cache_t *r2)
+{
+    struct in6_addr *i1 = &((SA6*)&r1->destaddr)->sin6_addr; /* Internet 6 only address */
+    struct in6_addr *i2 = &((SA6*)&r2->destaddr)->sin6_addr; 
+
+    if (((SA6*)&r1->destaddr)->sin6_port == ((SA6*)&r2->destaddr)->sin6_port) {
+        if (r1->seq == r2->seq) {
+            return memcmp(i1, i2, sizeof(struct in6_addr));
+        } return (r1->seq - r2->seq);
+    } return (((SA6*)&r1->destaddr)->sin6_port - ((SA6*)&r2->destaddr)->sin6_port);
 }
 
 static inline const void* cache_getkey(const void *pnode)
 {
-    struct rb_node *node = (struct rb_node*)pnode;
-    return &rb_entry(node, cache_t, rbn)->pack;
+    return rb_entry(pnode, cache_t, rbn);
 }
 static inline const int search_cache_cmp(const void * nodes_cache, const void* rb_search_key)
 {
@@ -67,7 +81,9 @@ static inline const int search_cache_cmp(const void * nodes_cache, const void* r
     if (kk->destlen == sizeof(SA4)) {
         return search_in4_addr_seq_cmp(&con, kk);
     } else if ( kk->destlen == sizeof(SA6)) {
-        return search_in6_addr_seq_cmp(&con, kk);
+        return search_cache_key_in6_addr_seq_cmp(&con, kk);
+    } else {
+        ERR_QUIT("Protocol stack processing error");
     }
     abort();
 }
@@ -77,7 +93,8 @@ inline static struct rb_node * rb_search(rb_root_t *root, const void *key)
     
     while (node) 
     {
-        int result = root->cmp(root->getkey(node), key);
+        //int result = root->cmp(root->getkey(node), key);
+        int result = search_cache_cmp(root->getkey(node), key);
 
         if (result < 0)
             node = node->rb_left;
@@ -88,7 +105,7 @@ inline static struct rb_node * rb_search(rb_root_t *root, const void *key)
     }
     return 0;
 }
-inline int insert_cache_in4_addr_seq_cmp(cache_t *r1, cache_t *r2)
+static inline int insert_cache_in4_addr_seq_cmp(cache_t *r1, cache_t *r2)
 {
     struct sockaddr_in *i1 = (SA4*)&r1->pack.srcaddr;		/* Internet 4 address, port  */
     struct sockaddr_in *i2 = (SA4*)&r2->pack.srcaddr;		
@@ -99,21 +116,40 @@ inline int insert_cache_in4_addr_seq_cmp(cache_t *r1, cache_t *r2)
         } return (i1->sin_port - i1->sin_port) ;
     } return (i1->sin_addr.s_addr - i1->sin_addr.s_addr);
 }
-inline int insert_cache_in6_addr_seq_cmp(cache_t *r1, cache_t *r2)
+static inline int insert_cache_in6_addr_seq_cmp_onebyone(cache_t *r1, cache_t *r2)
 {
     struct in6_addr *i1 = &((SA6*)&r1->pack.srcaddr)->sin6_addr; /* Internet 6 only address */
     struct in6_addr *i2 = &((SA6*)&r2->pack.srcaddr)->sin6_addr; 
+#ifndef module_exact_match_address
     if (i1->__in6_u.__u6_addr32[0] == i2->__in6_u.__u6_addr32[0]) {
         if (i1->__in6_u.__u6_addr32[1] == i2->__in6_u.__u6_addr32[1]) {
             if (i1->__in6_u.__u6_addr32[2] == i2->__in6_u.__u6_addr32[2]) {
                 if (i1->__in6_u.__u6_addr32[3] == i2->__in6_u.__u6_addr32[3]) {
                     if (((SA6*)&r1->pack.srcaddr)->sin6_port == ((SA6*)&r2->pack.srcaddr)->sin6_port) {
+#endif
                         return r1->pack.recvhdr.seq - r2->pack.recvhdr.seq;
+#ifndef module_exact_match_address
                     } return (((SA6*)&r1->pack.srcaddr)->sin6_port - ((SA6*)&r2->pack.srcaddr)->sin6_port);
                 } return (i1->__in6_u.__u6_addr32[3] - i2->__in6_u.__u6_addr32[3]);
             } return (i1->__in6_u.__u6_addr32[2] - i2->__in6_u.__u6_addr32[2]);
         } return (i1->__in6_u.__u6_addr32[1] - i2->__in6_u.__u6_addr32[1]);
     } return (i1->__in6_u.__u6_addr32[0] - i2->__in6_u.__u6_addr32[0]);
+#endif
+}
+static inline int insert_cache_in6_addr_seq_cmp(cache_t *r1, cache_t *r2)
+{
+    struct in6_addr *i1 = &((SA6*)&r1->pack.srcaddr)->sin6_addr; /* Internet 6 only address */
+    struct in6_addr *i2 = &((SA6*)&r2->pack.srcaddr)->sin6_addr; 
+
+#ifdef module_exact_match_address
+    return (r1->pack.recvhdr.seq - r2->pack.recvhdr.seq);
+#else
+    if (((SA6*)&r1->pack.srcaddr)->sin6_port == ((SA6*)&r2->pack.srcaddr)->sin6_port) {
+        if (r1->pack.recvhdr.seq == r2->pack.recvhdr.seq) {
+            return memcmp(i1, i2, sizeof(struct in6_addr));
+        } return (r1->pack.recvhdr.seq - r2->pack.recvhdr.seq);
+    } return (((SA6*)&r1->pack.srcaddr)->sin6_port - ((SA6*)&r2->pack.srcaddr)->sin6_port);
+#endif
 }
 static inline const int insert_cache_cmp(const void * node1, const void* node2)
 {
@@ -135,8 +171,8 @@ inline static int rb_insert(struct rb_root *root, struct rb_node *new_node)
     /* Figure out where to put now node */
     while (*now) 
     {
-        int result = insert_cache_cmp(root->getkey(*now) , root->getkey(new_node));
-        
+        int result = insert_cache_cmp(root->getkey(*now), root->getkey(new_node));
+
         parent = *now;
         
         if (result < 0)
@@ -154,39 +190,51 @@ inline static int rb_insert(struct rb_root *root, struct rb_node *new_node)
     return 0;
 }
 
-static void save_reliable_ack (supeer_t *psar, const void *outbuff, size_t outbytes)
+static inline void reliable_ack___save (supeer_t *psar, const void *outbuff, size_t outbytes)
 {
     cache_t * newack = calloc(1, sizeof(cache_t) + outbytes);
     if (newack == 0)
         return;
     time(&newack->ts);
-    memcpy(&newack->pack, &psar->synnowpack, sizeof(frames_t));
+    memcpy(&newack->pack, psar->synnowpack, sizeof(frames_t));
     memcpy(newack->pack.data, outbuff, outbytes);
     newack->pack.len = outbytes;
+
+    /* Adding associated */
     list_append(&psar->lsackcache, &newack->pack.node);
-#ifdef SU_DEBUG_LIST
-    LOG_MSG("peer %x add cache %p time %u", psar, newack, newack->ts);
+    rb_insert(&psar->rbackcache, &newack->rbn);
+
+#if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
+    LOG_MSG("peer %x add. cache_t ack node " ColorRed "%p" ColorEnd " time %u", 
+            psar, newack, newack->ts);
 #endif
+
     return;
 }
-static void check_rm_reliable_ack (supeer_t *psar)
+static inline void reliable_ack_unsave (supeer_t *psar)
 {
-    time_t t;
+    time_t nowtime;
 
-    time(&t);
     cache_t *frees, *cache = container_of 
         ( list_head(&psar->lsackcache, frames_t, node), cache_t, pack );
 
+    time(&nowtime);
+
     while ( &psar->lsackcache != &cache->pack.node ) {
-        if ( abs(t-cache->ts) < CACHETIMEOUT ) break;
+        if ( abs(nowtime - cache->ts) < CACHETIMEOUT ) break;
         frees = cache;
-        cache = container_of 
+        cache = container_of
             ( list_next(&cache->pack, frames_t, node), cache_t, pack );
+
+        /* Disconnect associated */
         list_remove(&frees->pack.node);
-#ifdef SU_DEBUG_LIST
-        LOG_MSG("peer %x free cache_t node " ColorRed "%p" ColorEnd " timeout[%u %u]", 
-                psar, frees, t, frees->ts+CACHETIMEOUT);
+        rb_erase(&frees->rbn, &psar->rbackcache);
+
+#if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
+        LOG_MSG("peer %x free cache_t ack node " ColorRed "%p" ColorEnd " timeout[%u %u]",
+                psar, frees, nowtime, frees->ts+CACHETIMEOUT);
 #endif
+
         free(frees);
     }
 }
@@ -199,10 +247,12 @@ static void su_peer_list_empty(supeer_t *psar, struct list *l)
         realnode = container_of(node, frames_t, node);
         node = node->next;
         free(realnode);
+
 #ifdef SU_DEBUG_LIST
         LOG_MSG("peer %x free frames_t node " ColorRed "%p" ColorEnd, 
                 psar, realnode);
 #endif
+
     }
 }
 
@@ -238,7 +288,9 @@ void request_handle(supeer_t *psar)
                 psar->ordinary_request_handle(psar, (char*)pack->data, pack->len);
             } break;
         default:
-            LOG_MSG("peer %x request type unknown %d", (uint64_t)pthread_self(), phdr->type);
+#ifdef SU_DEBUG_PEER_RECV
+            LOG_MSG("peer %x recv request type unknown %d", psar, phdr->type);
+#endif
             free(pack);
             return;
     }
@@ -262,21 +314,65 @@ static void *thread_request_handle(void *v)
             maketimeout_seconds(&abstime, 1);
             ret = pthread_cond_timedwait(&psar->syncond, &psar->lock, &abstime);
             if ( ret == ETIMEDOUT ) {
-                check_rm_reliable_ack(psar);
+                pthread_mutex_lock(&psar->cachelock);
+                reliable_ack_unsave(psar);
+                pthread_mutex_unlock(&psar->cachelock);
             }
         }
         list_remove(synnode);
         pthread_mutex_unlock(&psar->lock);
 
-        check_rm_reliable_ack(psar);
-
         // TODO: Have a request
         packet = container_of(synnode, frames_t, node);
         phdr = &packet->recvhdr;
 
+        rb_key_cache_t key;
+        memcpy(&key.destaddr, &packet->srcaddr, packet->srclen);
+        key.destlen = packet->srclen;
+        key.seq = packet->recvhdr.seq;
+
+        struct rb_node *cachenode;
+        cache_t *cache;
+
+        /* If multi-threaded processing request, protect the synnowpack */
+        pthread_mutex_lock(&psar->cachelock);
+
+        reliable_ack_unsave(psar);
+
+        if (packet->recvhdr.type == SU_RELIABLE && 
+                (cachenode = rb_search(&psar->rbackcache, &key))) {
+#ifdef SU_DEBUG_RBTREE
+            LOG_MSG("find cache_t node ....");
+#endif
+            free(packet);
+            cache = rb_entry(cachenode, cache_t, rbn);
+
+            struct iovec	iovsend[2] = {{0}};
+            struct msghdr	msgsend = {0};	/* assumed init to 0 */
+            frames_t *pack = &cache->pack;
+            suhdr_t answerhdr = pack->recvhdr;
+
+            answerhdr.act  = SU_ACK;
+            msgsend.msg_name = (void*)&pack->srcaddr;
+            msgsend.msg_namelen = pack->srclen;
+            msgsend.msg_iov = &iovsend[0];
+            msgsend.msg_iovlen = 2;
+
+            iovsend[0].iov_base = &answerhdr;
+            iovsend[0].iov_len = sizeof(suhdr_t);
+            iovsend[1].iov_base = (void*)pack->data;
+            iovsend[1].iov_len = pack->len;
+
+            sendmsg(psar->fd, &msgsend, 0);
+
+            pthread_mutex_unlock(&psar->cachelock);
+            continue;
+        }
+
         psar->synnowpack = packet;
         request_handle(psar);
         psar->synnowpack = 0;
+        pthread_mutex_unlock(&psar->cachelock);
     }
 
     return (void*)0;
@@ -312,8 +408,8 @@ static int thread_install(void *v)
     return 0;
 }
 
-int reliable_request_handle_install(supeer_t *psar,
-        cb_supeer_receiver_t* reliable_request_handle)
+int su_peer_reliable_request_handle_install(supeer_t *psar,
+        cb_su_peer_receiver_t* reliable_request_handle)
 {
     int ret;
 
@@ -324,8 +420,8 @@ int reliable_request_handle_install(supeer_t *psar,
 
     return ret;
 }
-int ordinary_request_handle_install(supeer_t *psar,
-        cb_supeer_receiver_t* ordinary_request_handle)
+int su_peer_ordinary_request_handle_install(supeer_t *psar,
+        cb_su_peer_receiver_t* ordinary_request_handle)
 {
     int ret;
 
@@ -336,13 +432,13 @@ int ordinary_request_handle_install(supeer_t *psar,
 
     return ret;
 }
-void reliable_request_handle_uninstall(supeer_t *psar)
+void su_peer_reliable_request_handle_uninstall(supeer_t *psar)
 {
     pthread_mutex_lock(&psar->lock);
     psar->reliable_request_handle = 0;
     pthread_mutex_unlock(&psar->lock);
 }
-void ordinary_request_handle_uninstall(supeer_t *psar)
+void su_peer_ordinary_request_handle_uninstall(supeer_t *psar)
 {
     pthread_mutex_lock(&psar->lock);
     psar->ordinary_request_handle = 0;
@@ -485,7 +581,7 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t s
         } else if (servlen == sizeof(SA6)) {
             memcpy(&s6, ptoaddr, servlen);
             s6.sin6_port = htons(port);
-            inet_pton(PF_INET6, "::", &s6.sin6_addr); // Uncorroborated
+            inet_pton(PF_INET6, "::", &s6.sin6_addr.__in6_u); // Uncorroborated
             paddr = &s6;
         } else {
             close(psar->fd);
@@ -500,7 +596,11 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t s
         }
     }
 
-    Setfd_nonblock(psar->fd);
+    if (setfd_nonblock(psar->fd) < 0) {
+        close(psar->fd);
+        psar->fd = -1;
+        return -1;
+    }
 
     memcpy(&psar->destaddr, ptoaddr, servlen);
     psar->destlen = servlen;
@@ -518,6 +618,7 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t s
     pthread_mutex_init(&psar->lock, 0);
     pthread_cond_init(&psar->ackcond, 0);
     pthread_cond_init(&psar->syncond, 0);
+    pthread_mutex_init(&psar->cachelock, 0);
 
     psar->tid = 0;
     psar->synnowpack = 0;
@@ -548,7 +649,7 @@ int su_peer_create(supeer_t *psar, const SA *ptoaddr, socklen_t servlen)
     return su_peer_create_bind(psar, 0, ptoaddr, servlen);
 }
 
-void su_peer_rm(supeer_t *psar)
+void su_peer_destroy(supeer_t *psar)
 {
     if (psar->fd >= 0) {
         close(psar->fd);
@@ -800,7 +901,7 @@ static ssize_t su_peer_reply_act(supeer_t *psar,
         return(-1);
 
     if (answerhdr.type == SU_RELIABLE)
-        save_reliable_ack(psar, outbuff, outbytes);
+        reliable_ack___save(psar, outbuff, outbytes);
 
     return(outbytes);
 }
