@@ -20,7 +20,7 @@
 #include <sys/types.h>
 
 #define REALDATAMAX  1024       /* datagram max size */
-#define CACHETIMEOUT 120         /* reliable request-result cached seconds */
+#define CACHETIMEOUT 90         /* reliable request-result cached seconds */
 
 #define ColorRed    "\e[31m"
 #define ColorGre    "\e[32m"
@@ -57,10 +57,6 @@ typedef union { SA4 addr4; SA6 addr6; } SAUN;
 
 typedef void cb_su_peer_receiver_t(supeer_t *ps, char* buff, int len);
 
-typedef struct data {
-    int         len;
-    uint8_t     data[];
-} data_t;
 
 /* recv storage data, list node */
 typedef struct frames {
@@ -77,6 +73,7 @@ typedef struct cache {
     struct rb_node rbn;
     frames_t  pack;
 } cache_t;
+
 typedef struct rb_key_cache {
     SAUN destaddr;
     socklen_t destlen;

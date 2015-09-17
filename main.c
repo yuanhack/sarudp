@@ -10,13 +10,15 @@ void sar_cli_send_recv(FILE *fp, supeer_t *psar);
 void udpin_reliable(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
-        printf("reliable recv len %d info "ColorRed"%s\n"ColorEnd, len, buff);
+        printf("reliable recv len %d info "ColorGre"%s\n"ColorEnd, len, buff);
+
     su_peer_reply(psar, buff, len);
 }
 void udpin_ordinary(supeer_t *psar, char *buff, int len)
 {
     if (len > 0) 
-        printf("ordinary recv len %d info "ColorGre"%s\n"ColorEnd, len, buff);
+        printf("ordinary recv len %d info "ColorYel"%s\n"ColorEnd, len, buff);
+
     su_peer_reply(psar, buff, len);
 }
 
@@ -60,9 +62,6 @@ main(int argc, char **argv)
     su_peer_ordinary_request_handle_install(&sar, udpin_ordinary);
 
 	sar_cli_send_recv(stdin, &sar);
-	sar_cli_send(stdin, &sar);
-
-    while (1) sleep(1);
 
     exit(0);
 }

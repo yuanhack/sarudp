@@ -1,24 +1,23 @@
 
 CC = gcc
 CFLAGS += -g
-#CFLAGS += -O2
 CFLAGS += -D_REENTRANT -Wall
-CLIBS = -lpthread
+#CFLAGS += -O2
+#CFLAGS += -Wno-unused-variable
+#CFLAGS += -Wno-unused-but-set-variable
 
-#CFLAGS += -Dmodule_exact_match_address
-
-CFLAGS += -Wno-unused-variable
-CFLAGS += -Wno-unused-but-set-variable
+#CFLAGS += -Dsingle_peer_module
 
 #CFLAGS += -DSU_DEBUG_PEER
 #CFLAGS += -DSU_DEBUG_PEER_RECV
-#CFLAGS += -D SU_DEBUG_TIMEDWAIT
+CFLAGS += -DSU_DEBUG_PEER_RESEND
+#CFLAGS += -DSU_DEBUG_TIMEDWAIT
 #CFLAGS += -DSU_DEBUG_TIMEVERBOSE
 #CFLAGS += -DSU_DEBUG_LIST
 #CFLAGS += -DSU_DEBUG_RBTREE
+CFLAGS += -DSU_DEBUG_RTT
 
-CFLAGS += -DRTT_DEBUG
-
+CLIBS = -lpthread
 
 RANLIB = ranlib
 
