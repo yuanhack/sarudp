@@ -17,7 +17,7 @@ char rejectbuff[1024*10] = {0};
 
 static inline int search_in4_addr_seq_cmp(rb_key_cache_t *r1, rb_key_cache_t *r2)
 {
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     return (r1->seq - r2->seq);
 #else
     struct sockaddr_in *i1 = (SA4*)&r1->destaddr;		/* Internet 4 address, port  */
@@ -32,7 +32,7 @@ static inline int search_in4_addr_seq_cmp(rb_key_cache_t *r1, rb_key_cache_t *r2
 }
 static inline int search_cache_key_in6_addr_seq_cmp_onebyone(rb_key_cache_t *r1, rb_key_cache_t *r2)
 {
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     return (r1->seq - r2->seq);
 #else
     struct in6_addr *i1 = &((SA6*)&r1->destaddr)->sin6_addr; /* Internet 6 only address */
@@ -53,7 +53,7 @@ static inline int search_cache_key_in6_addr_seq_cmp_onebyone(rb_key_cache_t *r1,
 }
 static inline int search_cache_key_in6_addr_seq_cmp(rb_key_cache_t *r1, rb_key_cache_t *r2)
 {
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     return (r1->seq - r2->seq);
 #else
     struct in6_addr *i1 = &((SA6*)&r1->destaddr)->sin6_addr; /* Internet 6 only address */
@@ -110,7 +110,7 @@ inline static struct rb_node * rb_search(rb_root_t *root, const void *key)
 }
 static inline int insert_cache_in4_addr_seq_cmp(cache_t *r1, cache_t *r2)
 {
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     return (r1->pack.recvhdr.seq - r2->pack.recvhdr.seq);
 #else
     struct sockaddr_in *i1 = (SA4*)&r1->pack.srcaddr;		/* Internet 4 address, port  */
@@ -125,7 +125,7 @@ static inline int insert_cache_in4_addr_seq_cmp(cache_t *r1, cache_t *r2)
 }
 static inline int insert_cache_in6_addr_seq_cmp_onebyone(cache_t *r1, cache_t *r2)
 {
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     return (r1->pack.recvhdr.seq - r2->pack.recvhdr.seq);
 #else
     struct in6_addr *i1 = &((SA6*)&r1->pack.srcaddr)->sin6_addr; /* Internet 6 only address */
@@ -146,7 +146,7 @@ static inline int insert_cache_in6_addr_seq_cmp_onebyone(cache_t *r1, cache_t *r
 }
 static inline int insert_cache_in6_addr_seq_cmp(cache_t *r1, cache_t *r2)
 {
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     return (r1->pack.recvhdr.seq - r2->pack.recvhdr.seq);
 #else
     struct in6_addr *i1 = &((SA6*)&r1->pack.srcaddr)->sin6_addr; /* Internet 6 only address */
@@ -198,13 +198,13 @@ inline static int rb_insert(struct rb_root *root, struct rb_node *new_node)
     return 0;
 }
 
-static inline void reliable_ack___save (supeer_t *psar, const void *outbuff, size_t outbytes)
+static inline void reliable_ack___save (supeer_t *psar, const void *outbuff, int outbytes)
 {
     cache_t * newack = calloc(1, sizeof(cache_t) + outbytes);
     if (newack == 0)
         return;
     time(&newack->ts);
-    memcpy(&newack->pack, psar->synnowpack, sizeof(frames_t));
+    memcpy(&newack->pack, psar->nowsynframe, sizeof(frames_t));
     memcpy(newack->pack.data, outbuff, outbytes);
     newack->pack.len = outbytes;
 
@@ -269,10 +269,10 @@ static void su_peer_list_empty(supeer_t *psar, struct list *l)
 
 void request_handle(supeer_t *psar)
 {
-    frames_t *pack = psar->synnowpack;
+    frames_t *pack = psar->nowsynframe;
     suhdr_t *phdr = &pack->recvhdr;
 
-#ifdef single_peer_module
+#ifndef promiscuous_mode
     /* TODO: important filter, Check address and port */
     if (psar->destlen == sizeof(SA4)) {
         SA4 * p4src = (SA4*)&pack->srcaddr;
@@ -359,7 +359,7 @@ static void *thread_request_handle(void *v)
         struct rb_node *cachenode;
         cache_t *cache;
 
-        /* If multi-threaded processing request, protect the synnowpack */
+        /* If multi-threaded processing request, protect the nowsynframe */
         pthread_mutex_lock(&psar->cachelock);
 
         reliable_ack_unsave(psar);
@@ -407,9 +407,9 @@ static void *thread_request_handle(void *v)
             continue;
         }
 
-        psar->synnowpack = packet;
+        psar->nowsynframe = packet;
         request_handle(psar);
-        psar->synnowpack = 0;
+        psar->nowsynframe = 0;
         pthread_mutex_unlock(&psar->cachelock);
     }
 
@@ -483,7 +483,7 @@ void su_peer_ordinary_request_handle_uninstall(supeer_t *psar)
     pthread_mutex_unlock(&psar->lock);
 }
 
-static void su_peer_recv_handle(fe_t * fe)
+static void handle_su_peer_recv(fe_t * fe)
 {
     int ret;
     SA4 addr;
@@ -612,12 +612,12 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t s
         SA4 s4;
         SA6 s6;
         if (servlen == sizeof(SA4)) {
-            memcpy(&s4, ptoaddr, servlen);
+            memcpy(&s4, ptoaddr, servlen);  /* for sin_family and more... */
             s4.sin_port = htons(port);
             inet_pton(PF_INET, "0.0.0.0", &s4.sin_addr.s_addr);
             paddr = &s4;
         } else if (servlen == sizeof(SA6)) {
-            memcpy(&s6, ptoaddr, servlen);
+            memcpy(&s6, ptoaddr, servlen); /* for sin6_family and more...  */
             s6.sin6_port = htons(port);
             inet_pton(PF_INET6, "::", &s6.sin6_addr.__in6_u); // Uncorroborated
             paddr = &s6;
@@ -659,7 +659,7 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t s
     pthread_mutex_init(&psar->cachelock, 0);
 
     psar->tid = 0;
-    psar->synnowpack = 0;
+    psar->nowsynframe = 0;
     psar->reliable_request_handle = 0;
     psar->ordinary_request_handle = 0;
 
@@ -672,14 +672,14 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t s
 
     memset(&psar->fe, 0, sizeof(fe_t));
     fe_init(&psar->fe, sugem, psar->fd);
-    fe_set(&psar->fe, EPOLLIN, su_peer_recv_handle);
+    fe_set(&psar->fe, EPOLLIN, handle_su_peer_recv);
     fe_set(&psar->fe, EPOLLET, 0);
     Fe_em_add(&psar->fe);
 
 #ifdef SU_DEBUG_PEER
     log_msg("peer %x create successful, socket %d", psar, psar->fd);
 #endif
-    return 0;
+    return psar->fd;
 }
 
 int su_peer_create(supeer_t *psar, const SA *ptoaddr, socklen_t servlen)
@@ -698,9 +698,9 @@ void su_peer_destroy(supeer_t *psar)
     pthread_cond_destroy(&psar->ackcond);
 }
 
-static ssize_t su_peer_send_act(supeer_t *psar, const void *outbuff, size_t outbytes)
+static int su_peer_send_act(supeer_t *psar, const void *outbuff, int outbytes)
 {
-    ssize_t			n;
+    int			n;
     struct iovec	iovsend[2] = {{0}};
     struct msghdr	msgsend = {0};	/* assumed init to 0 */
     suhdr_t sendhdr = {0};   /* SU_RELIABLE Request protocol head */
@@ -741,11 +741,11 @@ static int su_cmp_ack_SU_RELIABLE(suhdr_t *syn, suhdr_t *ack)
     return 0;
 }
 
-static ssize_t su_peer_send_recv_act(supeer_t *psar, 
-        const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes, int retransmit)
+static int su_peer_send_recv_act(supeer_t *psar,
+        const void *outbuff, int outbytes,
+        void *inbuff, int inbytes, int retransmit)
 {
-    ssize_t			n;
+    int			n;
     struct iovec	iovsend[2]={{0}};
     struct msghdr	msgsend = {0};	/* assumed init to 0 */
     suhdr_t sendhdr = {0};   /* SU_RELIABLE Request protocol head */
@@ -900,18 +900,18 @@ error_ret:
     return(-1);
 }
 
-static ssize_t su_peer_reply_act(supeer_t *psar, 
-        const void *outbuff, size_t outbytes)
+static int su_peer_reply_act(supeer_t *psar,
+        const void *outbuff, int outbytes)
 {
-    if (psar->synnowpack == 0) {
+    if (psar->nowsynframe == 0) {
         err_msg("peer %x is no request data");
         return -1;
     }
 
-    ssize_t			n;
+    int			n;
     struct iovec	iovsend[2] = {{0}};
     struct msghdr	msgsend = {0};	/* assumed init to 0 */
-    frames_t *pack = psar->synnowpack;
+    frames_t *pack = psar->nowsynframe;
     suhdr_t answerhdr = pack->recvhdr;
 
     answerhdr.act  = SU_ACK;
@@ -934,23 +934,33 @@ static ssize_t su_peer_reply_act(supeer_t *psar,
 
     return(outbytes);
 }
+int su_peer_getsrcaddr_act(supeer_t *psar, struct sockaddr *addr, socklen_t *addrlen)
+{
+    if (psar->nowsynframe == 0) {
+        err_msg("peer %x is no request source");
+        return -1;
+    }
+    memcpy(addr, &psar->nowsynframe->srcaddr, psar->nowsynframe->srclen);
+    *addrlen = psar->nowsynframe->srclen;
+    return 0;
+}
 
-ssize_t su_peer_reply(supeer_t *psar, const void *outbuff, size_t outbytes)
+int su_peer_reply(supeer_t *psar, const void *outbuff, int outbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     return su_peer_reply_act(psar, outbuff, outbytes);
 }
 
-ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes)
+int su_peer_send(supeer_t *psar, const void *outbuff, int outbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     return su_peer_send_act(psar, outbuff, outbytes);
 }
 
-ssize_t su_peer_request(supeer_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes)
+int su_peer_request(supeer_t *psar, const void *outbuff, int outbytes,
+        void *inbuff, int inbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
@@ -958,12 +968,17 @@ ssize_t su_peer_request(supeer_t *psar, const void *outbuff, size_t outbytes,
     return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 0);
 }
 
-ssize_t su_peer_request_retry(supeer_t *psar, const void *outbuff, size_t outbytes,
-        void *inbuff, size_t inbytes)
+int su_peer_request_retry(supeer_t *psar, const void *outbuff, int outbytes,
+        void *inbuff, int inbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
     return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 1);
+}
+int su_peer_getsrcaddr(supeer_t *psar, struct sockaddr *addr, socklen_t *addrlen)
+{
+    if (addr == 0 || addrlen == 0) { errno = EINVAL; return -1;}
+    return su_peer_getsrcaddr_act(psar, addr, addrlen);
 }
 

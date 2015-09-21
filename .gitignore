@@ -37,5 +37,6 @@ cscope.po.out
 #*.log
 #*.gz
 #*.bz2
-udpcli
+su_peer_server
+su_peer_client
 

@@ -36,15 +36,15 @@ typedef struct hdr {
     /* packet action  */
 #define     SU_SYN      0xff    /* request */
 #define     SU_ACK      0xfe    /* respnose */
-    uint8_t   act;              /* protocol action */
+    uint8_t act;                /* protocol action */
     
     /* packet type */
 #define     SU_ORDINARY 0       /* ordinary, foreign host Don't need to reply */
 #define     SU_RELIABLE 1       /* reliable, foreign host Must reply */
-    uint8_t   type;             /* protocol type */
+    uint8_t type;               /* protocol type */
 
-    uint32_t	seq;	        /* sequence # */
-    uint32_t	ts;		        /* timestamp when sent */
+    uint32_t seq;               /* sequence # */
+    uint32_t ts;                /* timestamp when sent */
 } suhdr_t;
 
 #pragma pack(pop)
@@ -110,7 +110,7 @@ struct sar_udp_peer {
 
     /* frames_t list: foreign request  */
     struct list synrecvls;      /* Receive foreign host the active request */
-    frames_t *synnowpack;       /* Currently working with active request (syn) */
+    frames_t *nowsynframe;      /* Currently working with active request (syn) */
 
     /* container cache_t: foreign reply result datas */
     struct list lsackcache;     /* The cache results for timeout check  */
@@ -122,17 +122,17 @@ int  su_peer_create(supeer_t *psar, const SA *ptoaddr, socklen_t servlen);
 int  su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t servlen);
 void su_peer_destroy(supeer_t *psar);
 
-ssize_t su_peer_send(supeer_t *psar, const void *outbuff, size_t outbytes);
-ssize_t su_peer_request(supeer_t *psar, const void *outbuff, size_t outbytes, void *inbuff, size_t inbytes);
-ssize_t su_peer_request_retry(supeer_t *psar, const void *outbuff, size_t outbytes, void *inbuff, size_t inbytes);
+int  su_peer_send(supeer_t *psar, const void *outbuff, int outbytes);
+int  su_peer_request(supeer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
+int  su_peer_request_retry(supeer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
 
-ssize_t su_peer_reply(supeer_t *psar, const void *outbuff, size_t outbytes);
+int  su_peer_reply(supeer_t *psar, const void *outbuff, int outbytes);
+int  su_peer_getsrcaddr(supeer_t *psar, struct sockaddr *addr, socklen_t *addrlen);
 
 int  su_peer_reliable_request_handle_install(supeer_t *psar, cb_su_peer_receiver_t* reliable_request_handle);
 int  su_peer_ordinary_request_handle_install(supeer_t *psar, cb_su_peer_receiver_t* ordinary_request_handle);
 void su_peer_reliable_request_handle_uninstall(supeer_t *psar);
 void su_peer_ordinary_request_handle_uninstall(supeer_t *psar);
 
-int su_peer_create_bind(supeer_t *psar, int port, const SA *ptoaddr, socklen_t servlen);
 
 #endif /* __YH_SARUDP_H__ */
