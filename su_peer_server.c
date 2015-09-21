@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     /* The address is not used as a client, can be arbitrarily set  */
 	bzero(&servaddr, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
-    servaddr.sin_port = 65534;
+    servaddr.sin_port = htons(65535);
 	Inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
 
 #if 0
@@ -61,11 +61,13 @@ void udpin_reliable(supeer_t *psar, char *buff, int len)
     socklen_t slen;
 
     su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
-    printf("reliable recv from %s:%d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port));
+    printf("reliable recv from %s:%d datagram len %d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len);
 
-    if (len > 0)
-        printf("reliable recv len %d datagrams " ColorGre "%s" ColorEnd 
-                " count = %llu\n"ColorEnd, len, buff, c+=len);
+    //c+=10; // sarudp header len;
+
+    printf("reliable recv len %d datagrams " ColorGre "%s" ColorEnd 
+            " count = %llu\n"ColorEnd, len, buff, c+=len);
+
     su_peer_reply(psar, buff, len);
 }
 void udpin_ordinary(supeer_t *psar, char *buff, int len)
@@ -75,11 +77,12 @@ void udpin_ordinary(supeer_t *psar, char *buff, int len)
     socklen_t slen;
 
     su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
-    printf("ordinary recv from %s:%d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port));
+    printf("ordinary recv from %s:%d datagrams len %d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len);
 
-    if (len > 0)
-        printf("ordinary recv len %d datagrams " ColorYel "%s" ColorEnd 
-                " count = %llu\n"ColorEnd, len, buff, c+=len);
+    //c+=10; // sarudp header len;
+
+    printf("ordinary recv len %d datagrams " ColorYel "%s" ColorEnd 
+            " count = %llu\n"ColorEnd, len, buff, c+=len);
 
     su_peer_reply(psar, buff, len);
 }

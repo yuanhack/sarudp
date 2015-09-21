@@ -573,6 +573,11 @@ recvagain:
     } else if (act == SU_ACK && type == SU_RELIABLE
             && psrc->sin_addr.s_addr == pdst->sin_addr.s_addr
             && psrc->sin_port == pdst->sin_port) {
+        if (psar->ackwaitnum <= 0) {
+            pthread_mutex_unlock(&psar->lock);
+            free(packet);
+            goto recvagain;
+        }
 #ifdef SU_DEBUG_LIST
         log_msg("peer %x append ack list "ColorRed"%p"ColorEnd" seq %d data len=%d",
                 psar, packet, r->seq, packet->len);
@@ -696,6 +701,8 @@ void su_peer_destroy(supeer_t *psar)
     }
     pthread_mutex_destroy(&psar->lock);
     pthread_cond_destroy(&psar->ackcond);
+
+    // unfinished ...
 }
 
 static int su_peer_send_act(supeer_t *psar, const void *outbuff, int outbytes)

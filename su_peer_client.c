@@ -75,9 +75,8 @@ void udpin_reliable(supeer_t *psar, char *buff, int len)
 
     su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
 
-    if (len > 0)
-        printf("reliable recv from %s:%d len %d datagrams " ColorGre"%s\n"ColorEnd, 
-                inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
+    printf("reliable recv from %s:%d datagrams len %d " ColorGre"%s\n"ColorEnd, 
+            inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
 
     su_peer_reply(psar, buff, len);
 }
@@ -88,11 +87,8 @@ void udpin_ordinary(supeer_t *psar, char *buff, int len)
 
     su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
 
-    printf("ordinary recv from %s:%d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port));
-
-    if (len > 0)
-        printf("ordinary recv from %s:%d len %d datagrams " ColorGre"%s\n"ColorEnd, 
-                inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
+    printf("ordinary recv from %s:%d datagram len %d " ColorGre"%s\n"ColorEnd, 
+            inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
 
     su_peer_reply(psar, buff, len);
 }
@@ -131,7 +127,7 @@ void cli_su_peer_request_random(supeer_t *psar)
 	ssize_t	n;
 	char	sendline[MAXLINE], recvline[MAXLINE + 1] = {0};
 
-    srand(time(0));  // false random init
+    srand(time(0));
 
     do {
         snprintf(sendline, sizeof(sendline), "%d\n", rand());
@@ -142,6 +138,7 @@ void cli_su_peer_request_random(supeer_t *psar)
         recvline[n] = 0;	/* null terminate */
         fprintf(stdout, "\e[32m%s\e[m", recvline); 
         fflush(stdout);
+
         usleep(1);     // microsecond
     } while (1);
 }
