@@ -71,7 +71,7 @@ typedef struct frames {
 typedef struct cache {
     time_t    ts;
     struct rb_node rbn;
-    frames_t  pack;
+    frames_t  frame;
 } cache_t;
 
 typedef struct rb_key_cache {
@@ -98,6 +98,7 @@ struct sar_udp_peer {
     cb_su_peer_receiver_t * ordinary_request_handle;
 
     pthread_t tid;
+    int       run;
 
     pthread_mutex_t lock;
     pthread_cond_t ackcond;

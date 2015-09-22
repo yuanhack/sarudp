@@ -5,17 +5,15 @@ CFLAGS += -O2
 CFLAGS += -Wno-unused-variable
 CFLAGS += -Wno-unused-but-set-variable
 
-#CFLAGS += -Dsingle_peer_module
 CFLAGS += -Dpromiscuous_mode
 
-#CFLAGS += -DSU_DEBUG_PEER
+CFLAGS += -DSU_DEBUG_RTT
 #CFLAGS += -DSU_DEBUG_PEER_RECV
 CFLAGS += -DSU_DEBUG_PEER_RESEND
 #CFLAGS += -DSU_DEBUG_TIMEDWAIT
 #CFLAGS += -DSU_DEBUG_TIMEVERBOSE
 #CFLAGS += -DSU_DEBUG_LIST
 #CFLAGS += -DSU_DEBUG_RBTREE
-#CFLAGS += -DSU_DEBUG_RTT
 
 CLIBS = -lpthread
 

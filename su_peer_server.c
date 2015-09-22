@@ -36,10 +36,10 @@ int main(int argc, char **argv)
 	Inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
 
 #if 0
-    if (su_peer_create((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
+    if (su_peer_create(&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_quit("su_peer_create error");
 #else
-    if (su_peer_create_bind((supeer_t*)&sar, argc == 1 ? 10000 : atoi(argv[1]), 
+    if (su_peer_create_bind(&sar, argc == 1 ? 10000 : atoi(argv[1]), 
                 (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_sys("su_peer_create_bind error");
     log_msg("listen port %s successful", argc == 1 ? "10000" : argv[1]);
@@ -83,8 +83,6 @@ void udpin_ordinary(supeer_t *psar, char *buff, int len)
 
     printf("ordinary recv len %d datagrams " ColorYel "%s" ColorEnd 
             " count = %llu\n"ColorEnd, len, buff, c+=len);
-
-    su_peer_reply(psar, buff, len);
 }
 
 void sigint(int no)

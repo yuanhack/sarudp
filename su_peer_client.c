@@ -43,11 +43,11 @@ int main(int argc, char **argv)
 
 #if 1
     /* Using random free port */
-    if (su_peer_create((supeer_t*)&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
+    if (su_peer_create(&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_quit("su_peer_create error");
 #else
     /* Using bind configure port */
-    if (su_peer_create_bind((supeer_t*)&sar, 10000, (SA*)&servaddr, sizeof(servaddr)) < 0)
+    if (su_peer_create_bind(&sar, 65534, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_sys("su_peer_create_bind error");
 #endif
 
@@ -56,10 +56,10 @@ int main(int argc, char **argv)
     /* Install the ordinary request handler */
     su_peer_ordinary_request_handle_install(&sar, udpin_ordinary);
 
-#if 1
+#if 0
     // send reliable data to target
-	//cli_su_peer_request(stdin, &sar);
-    cli_su_peer_request_random(&sar);
+	cli_su_peer_request(stdin, &sar);
+    //cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
 	cli_su_peer_send(stdin, &sar);
@@ -90,7 +90,6 @@ void udpin_ordinary(supeer_t *psar, char *buff, int len)
     printf("ordinary recv from %s:%d datagram len %d " ColorGre"%s\n"ColorEnd, 
             inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
 
-    su_peer_reply(psar, buff, len);
 }
 
 void sigint(int no)
