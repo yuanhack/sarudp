@@ -1,4 +1,4 @@
-#include "sarudp.h"
+#include "sarudp_peer.h"
 #include "domain_parse.h"
 #include "wrapfunc.h"
 
@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     /* Install the ordinary request handler */
     su_peer_ordinary_request_handle_install(&sar, udpin_ordinary);
 
-#if 0
+#if 1
     // send reliable data to target
 	cli_su_peer_request(stdin, &sar);
     //cli_su_peer_request_random(&sar);
@@ -73,7 +73,7 @@ void udpin_reliable(supeer_t *psar, char *buff, int len)
     struct sockaddr_in s4;
     socklen_t slen;
 
-    su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
+    su_peer_getsrcaddr(psar, (SA*)&s4, &slen);
 
     printf("reliable recv from %s:%d datagrams len %d " ColorGre"%s\n"ColorEnd, 
             inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);

@@ -1,6 +1,6 @@
 #include "wrapfunc.h"
 #include "error.h"
-#include "sarudp.h"
+#include "sarudp_peer.h"
 
 #include <stdio.h>
 #include <arpa/inet.h>
