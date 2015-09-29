@@ -15,7 +15,8 @@ pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
 char rejectbuff[1024*10] = {0};
 
-static inline void reliable_ack___save(supeer_t *psar, const void *outbuff, int outbytes)
+static inline void reliable_ack___save(su_peer_t *psar,
+        const void *outbuff, int outbytes)
 {
     cache_t * newack = calloc(1, sizeof(cache_t) + outbytes);
     if (newack == 0)
@@ -28,43 +29,37 @@ static inline void reliable_ack___save(supeer_t *psar, const void *outbuff, int 
     /* Adding associated */
     if (rb_insert(&psar->rbackcache, &newack->rbn) < 0) {
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
-        SA6 * p6src = (SA6*)&newack->frame.srcaddr;
-        if (newack->frame.srclen == sizeof(SA6)) {
-            char ip6buff[INET6_ADDRSTRLEN];
-            inet_ntop(PF_INET6, &p6src->sin6_addr, ip6buff, sizeof(ip6buff));
-            LOG_MSG("peer 0x%x time %u key(%s:%d:%d)" ColorRed " +ACK cache %p failed" ColorEnd,
-                    psar, newack->ts, ip6buff, ntohs(((SA4*)&newack->frame.srcaddr)->sin_port),
-                    newack->frame.recvhdr.seq, newack);
-        } else {
-            LOG_MSG("peer 0x%x time %u key(%s:%d:%d)" ColorRed " +ACK cache %p failed" ColorEnd,
-                    psar, newack->ts, inet_ntoa(((SA4*)&newack->frame.srcaddr)->sin_addr),
-                    ntohs(((SA4*)&newack->frame.srcaddr)->sin_port), newack->frame.recvhdr.seq, 
-                    newack);
-        }
+        char ipbuff[INET6_ADDRSTRLEN];
+        int port;
+#ifdef SU_DEBUG_IP6FULL
+        su_get_ip_port_f(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+        su_get_ip_port(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+        log_msg("peer %x time %u key(%s:%d:%u:%u)" ColorRed " +ACK cache %p failed" ColorEnd,
+                psar, newack->ts, ipbuff, port,
+                newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, newack);
 #endif
         free(newack);
         return;
     } else {
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE
-        SA6 * p6src = (SA6*)&newack->frame.srcaddr;
-        if (newack->frame.srclen == sizeof(SA6)) {
-            char ip6buff[INET6_ADDRSTRLEN];
-            inet_ntop(PF_INET6, &p6src->sin6_addr, ip6buff, sizeof(ip6buff));
-            LOG_MSG("peer 0x%x time %u key(%s:%d:%d)" ColorRed " +ACK cache %p" ColorEnd,
-                    psar, newack->ts, ip6buff, ntohs(((SA4*)&newack->frame.srcaddr)->sin_port),
-                    newack->frame.recvhdr.seq, newack);
-        } else {
-            LOG_MSG("peer 0x%x time %u key(%s:%d:%d)" ColorRed " +ACK cache %p" ColorEnd,
-                    psar, newack->ts, inet_ntoa(((SA4*)&newack->frame.srcaddr)->sin_addr),
-                    ntohs(((SA4*)&newack->frame.srcaddr)->sin_port), newack->frame.recvhdr.seq, 
-                    newack);
-        }
+        char ipbuff[INET6_ADDRSTRLEN];
+        int port;
+#ifdef SU_DEBUG_IP6FULL
+        su_get_ip_port_f(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+        su_get_ip_port(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+        log_msg("peer %x time %u key(%s:%d:%u:%u)" ColorRed " +ACK cache %p" ColorEnd,
+                psar, newack->ts, ipbuff, port,
+                newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, newack);
 #endif
         list_append(&psar->lsackcache, &newack->frame.node);
     }
     return;
 }
-static inline void reliable_ack_unsave (supeer_t *psar)
+static inline void reliable_ack_unsave (su_peer_t *psar)
 {
     time_t nowtime;
 
@@ -83,24 +78,21 @@ static inline void reliable_ack_unsave (supeer_t *psar)
         list_remove(&frees->frame.node);
         rb_erase(&frees->rbn, &psar->rbackcache);
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE
-        if (frees->frame.srclen == sizeof(SA6)) {
-            SA6 * p6src = (SA6*)&frees->frame.srcaddr;
-            char ip6buff[INET6_ADDRSTRLEN];
-            inet_ntop(PF_INET6, &p6src->sin6_addr, ip6buff, sizeof(ip6buff));
-            LOG_MSG("peer 0x%x time %u key(%s:%d:%d)" ColorRed " -ACK cache %p" ColorEnd,
-                    psar, frees->ts, ip6buff, ntohs(((SA4*)&frees->frame.srcaddr)->sin_port),
-                    frees->frame.recvhdr.seq, frees);
-        } else {
-            LOG_MSG("peer 0x%x time %u key(%s:%d:%d)" ColorRed " -ACK cache %p" ColorEnd,
-                    psar, frees->ts, inet_ntoa(((SA4*)&frees->frame.srcaddr)->sin_addr),
-                    ntohs(((SA4*)&frees->frame.srcaddr)->sin_port),
-                    frees->frame.recvhdr.seq, frees);
-        }
+        char ipbuff[INET6_ADDRSTRLEN];
+        int port;
+#ifdef SU_DEBUG_IP6FULL
+        su_get_ip_port_f(&frees->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+        su_get_ip_port(&frees->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+        LOG_MSG("peer %x time %u key(%s:%d:%u:%u)" ColorRed " -ACK cache %p" ColorEnd,
+                psar, frees->ts, ipbuff, ntohs(port),
+                frees->frame.recvhdr.sid, frees->frame.recvhdr.seq, frees);
 #endif
         free(frees);
     }
 }
-static void su_peer_list_empty(supeer_t *psar, struct list *l)
+static void su_peer_list_empty(su_peer_t *psar, struct list *l)
 {
     frames_t *realnode;
     struct list *node = l->next;
@@ -110,15 +102,13 @@ static void su_peer_list_empty(supeer_t *psar, struct list *l)
         realnode = container_of(node, frames_t, node);
         node = node->next;
         free(realnode);
-
 #ifdef SU_DEBUG_LIST
-        LOG_MSG("peer 0x%x free frames_t node " ColorRed "%p" ColorEnd, psar, realnode);
+        LOG_MSG("peer %x free frames_t node " ColorRed "%p" ColorEnd, psar, realnode);
 #endif
-
     }
 }
 
-void request_handle(supeer_t *psar)
+void request_handle(su_peer_t *psar)
 {
     frames_t *frame = psar->nowsynframe;
     suhdr_t *phdr = &frame->recvhdr;
@@ -133,22 +123,14 @@ void request_handle(supeer_t *psar)
                 psar->ordinary_request_handle(psar, (char*)frame->data, frame->len);
             } break;
         default:
-#ifdef SU_DEBUG_PEER_RECV
-            LOG_MSG("peer 0x%x recv request type unknown %d", psar, phdr->type);
-#endif
-            free(frame);
+            LOG_MSG("peer %x recv request type unknown %d", psar, phdr->type);
             return;
     }
-#if defined SU_DEBUG_PEER_RECV || defined SU_DEBUG_LIST
-    log_msg("peer 0x%x delete syn "ColorRed"%p"ColorEnd" seq %d datagram len %d",
-            psar, frame, phdr->seq, frame->len);
-#endif
-    free(frame);
 }
 
 static void *thread_request_handle(void *v)
 {
-    supeer_t *psar = (supeer_t*)v;
+    su_peer_t *psar = (su_peer_t*)v;
     struct list *synnode;
     frames_t *frame;
 
@@ -173,26 +155,34 @@ static void *thread_request_handle(void *v)
         frame = container_of(synnode, frames_t, node);
 
         rb_key_cache_t key;
-        memcpy(&key.destaddr, &frame->srcaddr, frame->srclen);
+        memcpy(&key.destaddr, &frame->srcaddr, sizeof(SAUN));
         key.destlen = frame->srclen;
         key.seq = frame->recvhdr.seq;
+        key.sid = frame->recvhdr.sid;
 
         struct rb_node *cachenode;
         cache_t *cache;
 
-        /* If multi-threaded processing request, protect the nowsynframe */
         pthread_mutex_lock(&psar->cachelock);
-
         reliable_ack_unsave(psar);
-
         if (frame->recvhdr.type == SU_RELIABLE &&
                 (cachenode = rb_search(&psar->rbackcache, &key))) {
             cache = rb_entry(cachenode, cache_t, rbn);
 
 #ifdef SU_DEBUG_RBTREE
-            LOG_MSG("peer 0x%x "ColorRed"finded ack cache %p" ColorEnd " time %u %s:%d:%d",
-                    psar, cache, cache->ts, inet_ntoa(((SA4*)&cache->frame.srcaddr)->sin_addr),
-                    ntohs(((SA4*)&cache->frame.srcaddr)->sin_port), cache->frame.recvhdr.seq);
+            pthread_t tid = pthread_self();
+            char ipbuff[INET6_ADDRSTRLEN];
+            int port;
+#ifdef SU_DEBUG_IP6FULL
+            su_get_ip_port_f(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+            su_get_ip_port(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+            log_msg("peer %x %x time %u key(%s:%d:%u:%u)" ColorRed " @ACK cache %p" ColorEnd,
+                    psar,tid,cache->ts, ipbuff, port,
+                    cache->frame.recvhdr.sid,
+                    cache->frame.recvhdr.seq,
+                    cache);
 #endif
 
             struct iovec	iovsend[2] = {{0}};
@@ -210,26 +200,43 @@ static void *thread_request_handle(void *v)
             iovsend[1].iov_len = cache->frame.len;
 
             if (sendmsg(psar->fd, &msgsend, 0) != sizeof(suhdr_t) + cache->frame.len) {
-                ERR_RET("retransmit sendmsg to %s:%d:%u:%u error",
-                        inet_ntoa(((SA4*)&frame->srcaddr)->sin_addr),
-                        ntohs(((SA4*)&frame->srcaddr)->sin_port),
+                char ipbuff[INET6_ADDRSTRLEN];
+                int port;
+#ifdef SU_DEBUG_IP6FULL
+                su_get_ip_port_f(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+                su_get_ip_port(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+                err_ret("retransmit sendmsg %s:%d:%u:%u:%u error",
+                        ipbuff, port, frame->recvhdr.sid,
                         frame->recvhdr.seq, frame->recvhdr.ts);
             } 
 #ifdef SU_DEBUG_PEER_RESEND
             else {
-                log_msg("retransmit sendmsg to %s:%d:%u:%u",
-                        inet_ntoa(((SA4*)&frame->srcaddr)->sin_addr),
-                        ntohs(((SA4*)&frame->srcaddr)->sin_port),
+                char ipbuff[INET6_ADDRSTRLEN];
+                int port;
+#ifdef SU_DEBUG_IP6FULL
+                su_get_ip_port_f(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+                su_get_ip_port(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+                log_msg("retransmit sendmsg %s:%d:%u:%u:%u",
+                        ipbuff, port, frame->recvhdr.sid,
                         frame->recvhdr.seq, frame->recvhdr.ts);
             }
 #endif
-            free(frame);
             pthread_mutex_unlock(&psar->cachelock);
+            free(frame);
             continue;
         }
 
         psar->nowsynframe = frame;
         request_handle(psar);
+#if defined SU_DEBUG_PEER_RECV || defined SU_DEBUG_LIST
+        log_msg("peer %x delete syn "ColorRed"%p"ColorEnd" seq %d datagram len %d",
+                psar, frame, frame->recvhdr.seq, frame->len);
+#endif
+        free(frame);
         psar->nowsynframe = 0;
         pthread_mutex_unlock(&psar->cachelock);
     }
@@ -239,7 +246,7 @@ static void *thread_request_handle(void *v)
 
 static int thread_install(void *v)
 {
-    supeer_t *psar = (supeer_t*)v;
+    su_peer_t *psar = (su_peer_t*)v;
 
     if (psar->tid)
         return 0;
@@ -262,7 +269,7 @@ static int thread_install(void *v)
     return 0;
 }
 
-int su_peer_reliable_request_handle_install(supeer_t *psar,
+int su_peer_reliable_request_handle_install(su_peer_t *psar,
         cb_supeer_recv_t* reliable_request_handle)
 {
     int ret;
@@ -274,7 +281,7 @@ int su_peer_reliable_request_handle_install(supeer_t *psar,
 
     return ret;
 }
-int su_peer_ordinary_request_handle_install(supeer_t *psar,
+int su_peer_ordinary_request_handle_install(su_peer_t *psar,
         cb_supeer_recv_t* ordinary_request_handle)
 {
     int ret;
@@ -286,13 +293,13 @@ int su_peer_ordinary_request_handle_install(supeer_t *psar,
 
     return ret;
 }
-void su_peer_reliable_request_handle_uninstall(supeer_t *psar)
+void su_peer_reliable_request_handle_uninstall(su_peer_t *psar)
 {
     pthread_mutex_lock(&psar->lock);
     psar->reliable_request_handle = 0;
     pthread_mutex_unlock(&psar->lock);
 }
-void su_peer_ordinary_request_handle_uninstall(supeer_t *psar)
+void su_peer_ordinary_request_handle_uninstall(su_peer_t *psar)
 {
     pthread_mutex_lock(&psar->lock);
     psar->ordinary_request_handle = 0;
@@ -301,30 +308,47 @@ void su_peer_ordinary_request_handle_uninstall(supeer_t *psar)
 
 static void handle_su_peer_recv(fe_t * fe)
 {
-    int ret;
-    SA4 addr;
-    socklen_t socklen = sizeof(SA4);
-    supeer_t *psar = container_of(fe, supeer_t, fe);
+    int ret, port;
+    char ipbuff[INET6_ADDRSTRLEN];
+    SAUN saddr;
+    socklen_t socklen;
+    su_peer_t *psar = container_of(fe, su_peer_t, fe);
     struct iovec    iovrecv[2] = {{0}}; /* assumed init to 0 */
     struct msghdr   msgrecv = {0};  /* assumed init to 0 */
     frames_t *frame;
 recvagain:
+    socklen = psar->destlen;
     frame = calloc(1, sizeof(frames_t) + REALDATAMAX);
     if (frame == 0) {
-        log_msg("peer 0x%x ENOMEM", psar);
+        log_msg("peer %x ENOMEM", psar);
         /* reject datagram */
-        ret = recvfrom(fe->fd, rejectbuff, sizeof(rejectbuff), 0, (SA*)&addr, &socklen);
+        ret = recvfrom(fe->fd, rejectbuff, sizeof(rejectbuff), 0, (SA*)&saddr, &socklen);
         if (ret < 0 && errno == EAGAIN) {
             return;
         }
 #ifdef SU_DEBUG_PEER_RECV
+        switch (saddr.sfamily) {
+            case PF_INET:
+            case PF_INET6:
+#ifdef SU_DEBUG_IP6FULL
+                su_get_ip_port_f(&saddr, ipbuff, sizeof(ipbuff), &port);
+#else
+                su_get_ip_port(&saddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+                break;
+            default:
+                log_msg("serv %x reject unknown protocol raw bytes %d", psar, ret);
+                free(frame);
+                goto recvagain;
+        };
         ERR_RET("peer 0x%x %d recv %s:%d bytes %d, but reject datas", psar,
-                fe->fd, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port), ret);
+                fe->fd, ipbuff, port, ret);
 #endif
         return;
     }
 
-    frame->srclen       = sizeof(SA4);
+    //frame->srclen       = sizeof(SA4);
+    frame->srclen       = psar->destlen;
 
     msgrecv.msg_name    = & frame->srcaddr;
     msgrecv.msg_namelen = frame->srclen;
@@ -344,21 +368,19 @@ recvagain:
         ERR_RET("recvmsg error");
     }
 
-    if (ret <= sizeof(suhdr_t)) {
+    if (ret < sizeof(suhdr_t)) {
 #ifdef SU_DEBUG_PEER_RECV
         errno = EBADMSG;
-        err_ret("peer 0x%x recv %s:%d raw bytes %d less than the protocol header %d", psar,
-                inet_ntoa(((SA4*)&frame->srcaddr)->sin_addr),
-                ntohs(((SA4*)&frame->srcaddr)->sin_port), ret, sizeof(suhdr_t));
+        err_ret("peer %x recv %s:%d raw bytes %d less than the protocol header %d", psar,
+                ipbuff, port, ret, sizeof(suhdr_t));
 #endif
         free(frame);
         goto recvagain;
     }
 
 #ifdef SU_DEBUG_PEER_RECV
-    log_msg("peer 0x%x recv %s:%d raw bytes %d", psar,
-            inet_ntoa(((SA4*)&frame->srcaddr)->sin_addr),
-            ntohs(((SA4*)&frame->srcaddr)->sin_port), ret);
+    log_msg("peer %x recv %s:%d raw bytes %d", psar,
+            ipbuff, port, ret);
 #endif
 
     suhdr_t *r = &frame->recvhdr;
@@ -367,18 +389,41 @@ recvagain:
 
     frame->len = ret - sizeof(suhdr_t);
 
-    SA4 *psrc, *pdst;
-    psrc = (SA4*)&frame->srcaddr;
-    pdst = (SA4*)&psar->destaddr;
+    switch (frame->srcaddr.sfamily) {
+        case PF_INET:
+        case PF_INET6:
+#ifdef SU_DEBUG_IP6FULL
+            su_get_ip_port_f(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#else
+            su_get_ip_port(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
+#endif
+            break;
+        default:
+            log_msg("serv %x reject unknown protocol type %d raw bytes %d",
+                    psar, frame->srcaddr.sfamily, ret);
+            free(frame);
+            goto recvagain;
+    };
+
+    SAUN *psrc, *pdst;
+    psrc = &frame->srcaddr; // foreign host
+    pdst = &psar->destaddr; // localhost
+
+//    showaddr6_8_16(&pdst->addr6);
+//    showaddr6_8_16(&psrc->addr6);
+//    showaddr6_16_8(&psrc->addr6);
+//    showaddr6_32_4(&psrc->addr6);
 
 #ifndef promiscuous_mode
     /*  Filter: Check address and port
      *  compare datagram source and peer destination */
-    if( psrc->sin_addr.s_addr != pdst->sin_addr.s_addr
-            || psrc->sin_port != pdst->sin_port ) {
+    if (    (pdst->sfamily == PF_INET6 &&
+                sockaddr_in6_cmp(&psrc->addr6, &pdst->addr6 ) != 0)
+            || (pdst->sfamily == PF_INET &&
+                sockaddr_in4_cmp(&psrc->addr4, &pdst->addr4 ) != 0)  ){
 #ifdef SU_DEBUG_PEER_RECV
-        log_msg(ColorYel"peer 0x%x reject act[0x%02x] from %s:%d datagram len %d"ColorEnd,
-                r->act,psar, inet_ntoa(psrc->sin_addr), ntohs(psrc->sin_port), frame->len);
+        log_msg(ColorYel"peer %x reject act[0x%02x] from %s:%d datagram len %d"ColorEnd,
+                act, psar, ipbuff, port, frame->len);
 #endif
         free(frame);
         goto recvagain;
@@ -386,14 +431,14 @@ recvagain:
 #endif /* #ifndef promiscuous_mode */
 
     pthread_mutex_lock(&psar->lock);
-    if (act == SU_SYN) {
+    if (act == SU_SYN && frame->len > 0) {
         if (!psar->run) {
             pthread_mutex_unlock(&psar->lock);
             free(frame);
             goto recvagain;
         }
 #if defined SU_DEBUG_PEER_RECV || defined SU_DEBUG_LIST
-        log_msg("peer 0x%x append syn "ColorRed"%p"ColorEnd" seq %d datagram len %d",
+        log_msg("peer %x append syn "ColorRed"%p"ColorEnd" seq %d datagram len %d",
                 psar, frame, r->seq, frame->len);
 #endif
         list_append(&psar->synrecvls, &frame->node);
@@ -402,11 +447,13 @@ recvagain:
     } else if (act == SU_ACK && type == SU_RELIABLE) {
 #ifdef promiscuous_mode
         /* Filter: receive response from self request */
-        if( psrc->sin_addr.s_addr != pdst->sin_addr.s_addr
-                || psrc->sin_port != pdst->sin_port ) {
+        if (    (pdst->sfamily == PF_INET6 &&
+                    sockaddr_in6_cmp(&psrc->addr6, &pdst->addr6 ) != 0)
+                || (pdst->sfamily == PF_INET &&
+                    sockaddr_in4_cmp(&psrc->addr4, &pdst->addr4 ) != 0)  ){
 #ifdef SU_DEBUG_PEER_RECV
-            log_msg(ColorYel "peer 0x%x reject ack from %s:%d datagram len %d" ColorEnd, psar,
-                    inet_ntoa(psrc->sin_addr), ntohs(psrc->sin_port), frame->len);
+            log_msg(ColorYel "peer %x reject ack from %s:%d datagram len %d" ColorEnd, psar,
+                    ipbuff, port, frame->len);
 #endif
             pthread_mutex_unlock(&psar->lock);
             free(frame);
@@ -419,7 +466,7 @@ recvagain:
             goto recvagain;
         }
 #if defined SU_DEBUG_PEER_RECV || defined SU_DEBUG_LIST
-        log_msg("peer 0x%x append ack "ColorRed"%p"ColorEnd" seq %d datagram len %d",
+        log_msg("peer %x append ack "ColorRed"%p"ColorEnd" seq %d datagram len %d",
                 psar, frame, r->seq, frame->len);
 #endif
         list_append(&psar->ackrecvls, &frame->node);
@@ -429,9 +476,7 @@ recvagain:
         pthread_mutex_unlock(&psar->lock);
 #ifdef SU_DEBUG_PEER_RECV
         errno = EBADMSG;
-        err_ret("peer 0x%x recv %s:%d raw bytes %d protocol format error", psar,
-                inet_ntoa(((SA4*)&frame->srcaddr)->sin_addr),
-                ntohs(((SA4*)&frame->srcaddr)->sin_port), ret);
+        err_ret("peer %x recv %s:%d raw bytes %d protocol format error", psar, ipbuff, port, ret);
 #endif
         free(frame);
         return;
@@ -442,11 +487,11 @@ recvagain:
     goto recvagain;
 }
 
-int su_peer_create_bind(supeer_t *psar, int port, const SA *destaddr, socklen_t destlen)
+int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t destlen)
 {
     psar->fd = socket(destaddr->sa_family, SOCK_DGRAM, 0);
     if (psar->fd < 0) {
-        err_ret("peer 0x%x create failed, socket error", psar);
+        err_ret("peer %x create failed, socket error", psar);
         return -1;
     }
 
@@ -483,12 +528,13 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *destaddr, socklen_t 
         return -1;
     }
 
+    memset(&psar->destaddr, 0, sizeof(SAUN));
     memcpy(&psar->destaddr, destaddr, destlen);
     psar->destlen = destlen;
 
     psar->seq = 0;
     psar->rttinit = 0;
-    psar->retry = RTT_MAXNREXMT;
+    psar->retry = 0; //RTT_MAXNREXMT;
 
     psar->ackwaitnum = 0;
     list_init(&psar->ackrecvls);
@@ -512,7 +558,13 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *destaddr, socklen_t 
     if (sugem == 0) {
         sugem = Em_open(100, -1, 0, 0, 0);
         Em_run(sugem);
+
+        /* Make noise */
+        struct timeval now;
+        gettimeofday(&now, 0);
+        srand(now.tv_sec % 1000 + now.tv_usec);
     }
+    psar->sid = rand() % 65535;
     pthread_mutex_unlock(&emutex);
 
     memset(&psar->fe, 0, sizeof(fe_t));
@@ -524,12 +576,12 @@ int su_peer_create_bind(supeer_t *psar, int port, const SA *destaddr, socklen_t 
     return psar->fd;
 }
 
-int su_peer_create(supeer_t *psar, const SA *ptoaddr, socklen_t servlen)
+int su_peer_create(su_peer_t *psar, const SA *ptoaddr, socklen_t servlen)
 {
     return su_peer_create_bind(psar, 0, ptoaddr, servlen);
 }
 
-void su_peer_destroy(supeer_t *psar)
+void su_peer_destroy(su_peer_t *psar)
 {
     if (psar->fd >= 0) {
         close(psar->fd);
@@ -542,7 +594,7 @@ void su_peer_destroy(supeer_t *psar)
     // unfinished ...
 }
 
-static int su_peer_send_act(supeer_t *psar, const void *outbuff, int outbytes)
+static int su_peer_send_act(su_peer_t *psar, const void *outbuff, int outbytes)
 {
     int			n;
     struct iovec	iovsend[2] = {{0}};
@@ -552,7 +604,8 @@ static int su_peer_send_act(supeer_t *psar, const void *outbuff, int outbytes)
     pthread_mutex_lock(&psar->lock);
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_ORDINARY;
-    sendhdr.seq = ++psar->seq;
+    sendhdr.sid  = psar->sid;
+    sendhdr.seq  = ++psar->seq;
     sendhdr.ts = 0;
     msgsend.msg_name = (void*)&psar->destaddr;
     msgsend.msg_namelen = psar->destlen;
@@ -585,7 +638,7 @@ static int su_cmp_ack_SU_RELIABLE(suhdr_t *syn, suhdr_t *ack)
     return 0;
 }
 
-static int su_peer_send_recv_act(supeer_t *psar,
+static int su_peer_send_recv_act(su_peer_t *psar,
         const void *outbuff, int outbytes,
         void *inbuff, int inbytes, int retransmit)
 {
@@ -610,6 +663,7 @@ static int su_peer_send_recv_act(supeer_t *psar,
 
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_RELIABLE;
+    sendhdr.sid  = psar->sid;
     sendhdr.seq  = psar->seq;
     msgsend.msg_name = (void*)&psar->destaddr;
     msgsend.msg_namelen = psar->destlen;
@@ -670,7 +724,7 @@ timedwaitagain:
         if ( node == &psar->ackrecvls ) {
             /* Be careful of the lock, locked -> timedwait -> unlock */
 #ifdef SU_DEBUG_LIST
-            log_msg("peer 0x%x no found seq %d ack, timed wait again", psar, sendhdr.seq);
+            log_msg("peer %x no found seq %d ack, timed wait again", psar, sendhdr.seq);
 #endif
             goto timedwaitagain;
         }
@@ -682,7 +736,7 @@ timedwaitagain:
         precvhdr = &packet->recvhdr;
 
 #if defined SU_DEBUG_PEER_RECV || defined SU_DEBUG_LIST
-        log_msg("peer 0x%x finded ack " ColorRed "%p" ColorEnd " seq %d datagram len %d",
+        log_msg("peer %x finded ack " ColorRed "%p" ColorEnd " seq %d datagram len %d",
                 psar, packet, r->seq, packet->len);
 #endif
 
@@ -693,9 +747,7 @@ timedwaitagain:
         memcpy(inbuff, packet->data, n > inbytes ? inbytes : n);
 
     } else if (ret == EINTR) {
-#ifdef SU_DEBUG_TIMEDWAIT
-        log_msg("pthread_cond_timedwait system EINTR, timed wait again");
-#endif
+        log_msg("pthread_cond_timedwait system EINTR");
         goto timedwaitagain;
     } else if (ret == ETIMEDOUT) {
 #ifdef SU_DEBUG_TIMEVERBOSE
@@ -731,7 +783,7 @@ timedwaitagain:
     pthread_mutex_unlock(&psar->lock);
 
 #ifdef SU_DEBUG_LIST
-    log_msg("peer 0x%x free node  " ColorRed "%p"ColorEnd" seq %d", psar, packet, sendhdr.seq);
+    log_msg("peer %x free node  " ColorRed "%p"ColorEnd" seq %d", psar, packet, sendhdr.seq);
 #endif
 
     free(packet);
@@ -747,11 +799,11 @@ error_ret:
     return(-1);
 }
 
-static int su_peer_reply_act(supeer_t *psar,
+static int su_peer_reply_act(su_peer_t *psar,
         const void *outbuff, int outbytes)
 {
     if (psar->nowsynframe == 0) {
-        err_msg("peer 0x%x is no request data");
+        err_msg("peer %x is no request data");
         return -1;
     }
 
@@ -781,10 +833,10 @@ static int su_peer_reply_act(supeer_t *psar,
 
     return(outbytes);
 }
-int su_peer_getsrcaddr_act(supeer_t *psar, SA *addr, socklen_t *addrlen)
+int su_peer_getsrcaddr_act(su_peer_t *psar, SA *addr, socklen_t *addrlen)
 {
     if (psar->nowsynframe == 0) {
-        err_msg("peer 0x%x is no request source");
+        err_msg("peer %x is no request source");
         return -1;
     }
     memcpy(addr, &psar->nowsynframe->srcaddr, psar->nowsynframe->srclen);
@@ -792,21 +844,24 @@ int su_peer_getsrcaddr_act(supeer_t *psar, SA *addr, socklen_t *addrlen)
     return 0;
 }
 
-int su_peer_reply(supeer_t *psar, const void *outbuff, int outbytes)
+int su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
-    if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
+    if (    (outbytes <  0) ||
+            (outbytes == 0 &&  outbuff) ||
+            (outbytes >  0 && !outbuff)    )
+    { errno = EINVAL; return -1; }
     return su_peer_reply_act(psar, outbuff, outbytes);
 }
 
-int su_peer_send(supeer_t *psar, const void *outbuff, int outbytes)
+int su_peer_send(su_peer_t *psar, const void *outbuff, int outbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     return su_peer_send_act(psar, outbuff, outbytes);
 }
 
-int su_peer_request(supeer_t *psar, const void *outbuff, int outbytes,
+int su_peer_request(su_peer_t *psar, const void *outbuff, int outbytes,
         void *inbuff, int inbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
@@ -815,7 +870,7 @@ int su_peer_request(supeer_t *psar, const void *outbuff, int outbytes,
     return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 0);
 }
 
-int su_peer_request_retry(supeer_t *psar, const void *outbuff, int outbytes,
+int su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes,
         void *inbuff, int inbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
@@ -823,7 +878,7 @@ int su_peer_request_retry(supeer_t *psar, const void *outbuff, int outbytes,
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
     return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 1);
 }
-int su_peer_getsrcaddr(supeer_t *psar, SA *addr, socklen_t *addrlen)
+int su_peer_getsrcaddr(su_peer_t *psar, SA *addr, socklen_t *addrlen)
 {
     if (addr == 0 || addrlen == 0) { errno = EINVAL; return -1;}
     return su_peer_getsrcaddr_act(psar, addr, addrlen);
