@@ -122,6 +122,12 @@ void request_handle(su_serv_t *psvr, frames_t * frame)
     }
 }
 
+void thread_cleanup(void *sv)
+{
+    su_serv_t *psvr = sv;
+    pthread_mutex_unlock(&psvr->lock);
+}
+
 static void *thread_request_handle(void *v)
 {
     su_serv_t *psvr = (su_serv_t*)v;
@@ -132,13 +138,19 @@ static void *thread_request_handle(void *v)
     int ret;
     struct timespec abstime = {0};
 
-    for (;;) {
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &ret);
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, 0);
+    pthread_cleanup_push(thread_cleanup, psvr);
+
+    for (;psvr->run;) {
         pthread_mutex_lock(&psvr->lock);
         while ((synnode = psvr->synrecvls.next) == &psvr->synrecvls) {
             maketimeout_seconds(&abstime, 1);
             ret = pthread_cond_timedwait(&psvr->syncond, &psvr->lock, &abstime);
-            LOG_MSG("ret = %d, run = %d", ret, psvr->run);
-            if (!psvr->run) goto quit;
+            if (!psvr->run) { 
+                pthread_mutex_unlock(&psvr->lock);
+                goto quit;
+            }
             if ( ret == ETIMEDOUT ) {
                 pthread_mutex_lock(&psvr->cachelock);
                 reliable_ack_unsave(psvr);
@@ -224,47 +236,61 @@ static void *thread_request_handle(void *v)
     }
 
 quit:
-    return (void*)0;
+    pthread_cleanup_pop(0);
+    pthread_exit(0);
 }
 
-static int thread_install(void *v)
+static int su_serv_thread_install(su_serv_t *psvr, int nthread)
 {
-    su_serv_t *psvr = (su_serv_t*)v;
-
-    if (psvr->run) 
-        return 0;
-
+    int i, n;
+    void *retr;
     pthread_attr_t attr;
 
+    psvr->tids = calloc(nthread, sizeof(pthread_t));
+    if ( !psvr->tids ) return -1;
+
+    psvr->run  = 0;
+    psvr->tnum = 0;
+    psvr->reliable_request_handle = 0;
+    psvr->ordinary_request_handle = 0;
+
+    /* Set stack size 1M */
     pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 1024*1024); //set stack size 1M
-    //pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_attr_setstacksize(&attr, 1024*1024);
 
-    int i, n, ret;
-    psvr->run = 1;
-    for (n = 0; n < psvr->tnum; n++) {
-        if ((ret = pthread_create(&psvr->tid[n], &attr,
-                        thread_request_handle, psvr)) != 0) {
-            psvr->run = 0;
-            void *retr;
+    for (n = 0; n < nthread; n++) {
+        errno = pthread_create (&psvr->tids[n], &attr, thread_request_handle, psvr);
+        if (errno != 0) {
+            err_ret("serv %x pthread_create[%d] error", n);
             for (i = 0; i < n; i++) {
-                errno = pthread_join(psvr->tid[i], &retr);
+                errno = pthread_join(psvr->tids[i], &retr);
                 if (errno != 0)
-                    err_sys("serv %x can't join with thread %x error");
-                log_msg("serv %x join with thread %x code %d", psvr, psvr->tid[i], ret);
+                    err_sys("serv %x join with thread %x error");
             }
-
             pthread_attr_destroy(&attr);
-
-            psvr->run = 0;
-            errno = ret;
+            free(psvr->tids);
             return (-1);
         }
-        log_msg("serv %x create thread %x successfully", psvr, psvr->tid[n]);
+        log_msg("serv %x create thread[%d] %x success", psvr, n, psvr->tids[n]);
     }
-
     pthread_attr_destroy(&attr);
+    psvr->run  = 1;
+    psvr->tnum = nthread;
+    return 0;
+}
+static int su_serv_thread_uninstall(su_serv_t *psvr)
+{
+    int i, n;
+    void *ret;
 
+    psvr->run = 0;
+    for (i = 0; i < psvr->tnum; i++) {
+        errno = pthread_join(psvr->tids[i], &ret);
+        if (errno != 0)
+            err_sys("serv %x can't join with thread %x error");
+        log_msg("serv %x join with thread %x code %d", psvr, psvr->tids[i], ret);
+    }
+    free(psvr->tids);
     return 0;
 }
 
@@ -375,8 +401,8 @@ recvagain:
     if (ret < sizeof(suhdr_t)) {
 #ifdef SU_DEBUG_PEER_RECV
         errno = EBADMSG;
-        err_ret("serv %x recv %s:%d raw bytes %d less than the protocol header %d", psvr,
-                ipbuff, port, ret, sizeof(suhdr_t));
+        err_ret("serv %x recv %s:%d raw bytes %d less than the protocol header %d",
+                psvr, ipbuff, port, ret, sizeof(suhdr_t));
 #endif
         free(frame);
         goto recvagain;
@@ -479,13 +505,7 @@ int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthr
     pthread_cond_init(&psvr->syncond, 0);
     pthread_mutex_init(&psvr->cachelock, 0);
 
-    psvr->tid = calloc(nthread, sizeof(pthread_t));
-    psvr->tnum = nthread;
-    psvr->run = 0;
-    psvr->reliable_request_handle = 0;
-    psvr->ordinary_request_handle = 0;
-
-    if (thread_install(psvr) < 0) {
+    if (su_serv_thread_install(psvr, nthread) < 0) {
         pthread_mutex_destroy(&psvr->mutex);
         pthread_mutex_destroy(&psvr->lock);
         pthread_mutex_destroy(&psvr->cachelock);
@@ -514,41 +534,44 @@ int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthr
 
 void su_serv_destroy(su_serv_t *psvr)
 {
-    if (psvr->fd < 0) {
-        return;
-    }
-
-    close(psvr->fd);
-    psvr->fd = -1;
-
-    LOG_MSG("000");
-
-    int i, err;
-    psvr->run = 0;
-    void *ret;
-    for (i = 0; i < psvr->tnum; i++) {
-        LOG_MSG("1");
-        errno = pthread_join(psvr->tid[i], &ret);
-        LOG_MSG("2");
-        if (errno != 0)
-            err_sys("serv %x can't join with thread %x error");
-        log_msg("serv %x join with thread %x code %d", psvr, psvr->tid[i], ret);
-    }
+    su_serv_thread_uninstall(psvr);
 
     pthread_mutex_destroy(&psvr->mutex);
     pthread_mutex_destroy(&psvr->lock);
     pthread_mutex_destroy(&psvr->cachelock);
     pthread_cond_destroy(&psvr->ackcond);
     pthread_cond_destroy(&psvr->syncond);
+
     close(psvr->fd);
     psvr->fd = -1;
 
-    // unfinished ...
+    su_serv_list_empty(psvr, &psvr->ackrecvls);
+    su_serv_list_empty(psvr, &psvr->synrecvls);
 
-    LOG_MSG("finish");
+    cache_t *frees, *cache = container_of 
+        ( list_head(&psvr->lsackcache, frames_t, node), cache_t, frame );
 
+    while ( &psvr->lsackcache != &cache->frame.node ) {
+        frees = cache;
+        cache = container_of
+            ( list_next(&cache->frame, frames_t, node), cache_t, frame );
 
-    return;
+        /* Disconnect associated And Cleanup All */
+        list_remove(&frees->frame.node);
+        rb_erase(&frees->rbn, &psvr->rbackcache);
+#if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
+        pthread_t tid = pthread_self();
+        char ipbuff[INET6_ADDRSTRLEN];
+        int port;
+        su_get_ip_port_f(&frees->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+        log_msg("serv %x time %u key(%s:%d:%u:%u)" ColorRed " _ACK cache %p" ColorEnd,
+                psvr, frees->ts, ipbuff, port,
+                frees->frame.recvhdr.sid, frees->frame.recvhdr.seq, frees);
+#endif
+        free(frees);
+    }
+
+    LOG_MSG("serv %x finish destroyed", psvr);
 }
 
 static int su_serv_reply_act(su_serv_t *psvr, const frames_t *frame,
@@ -584,17 +607,17 @@ static int su_serv_reply_act(su_serv_t *psvr, const frames_t *frame,
 
     return(outbytes);
 }
-static int su_serv_send_act(su_serv_t *psar, SA *destaddr, socklen_t destlen, const void *outbuff, int outbytes)
+static int su_serv_send_act(su_serv_t *psvr, SA *destaddr, socklen_t destlen, const void *outbuff, int outbytes)
 {
     int			n;
     struct iovec	iovsend[2] = {{0}};
     struct msghdr	msgsend = {0};	/* assumed init to 0 */
     suhdr_t sendhdr = {0};   /* SU_RELIABLE Request protocol head */
 
-    pthread_mutex_lock(&psar->lock);
+    pthread_mutex_lock(&psvr->lock);
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_ORDINARY;
-    sendhdr.seq = ++psar->seq;
+    sendhdr.seq = ++psvr->seq;
     sendhdr.ts = 0;
     msgsend.msg_name = (void*)destaddr;
     msgsend.msg_namelen = destlen;
@@ -606,8 +629,8 @@ static int su_serv_send_act(su_serv_t *psar, SA *destaddr, socklen_t destlen, co
     iovsend[1].iov_base = (void*)outbuff;
     iovsend[1].iov_len = outbytes;
 
-    n = sendmsg(psar->fd, &msgsend, 0);
-    pthread_mutex_unlock(&psar->lock);
+    n = sendmsg(psvr->fd, &msgsend, 0);
+    pthread_mutex_unlock(&psvr->lock);
 
     if (n != sizeof(suhdr_t) + outbytes)
         return(-1);
@@ -625,7 +648,7 @@ static int su_cmp_ack_SU_RELIABLE(suhdr_t *syn, suhdr_t *ack)
         return 1;
     return 0;
 }
-static int su_serv_send_recv_act(su_serv_t *psar, SA *destaddr, socklen_t destlen,
+static int su_serv_send_recv_act(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes, int retransmit)
 {
     int			n;
@@ -637,19 +660,19 @@ static int su_serv_send_recv_act(su_serv_t *psar, SA *destaddr, socklen_t destle
     struct list *node = 0;
     frames_t *packet = 0;
 
-    pthread_mutex_lock(&psar->mutex);
-    pthread_mutex_lock(&psar->lock);
-    if (psar->rttinit == 0) {
-        rtt_init(&psar->rttinfo, psar->retry); /* first time we're called */
-        psar->rttinit = 1;
+    pthread_mutex_lock(&psvr->mutex);
+    pthread_mutex_lock(&psvr->lock);
+    if (psvr->rttinit == 0) {
+        rtt_init(&psvr->rttinfo, psvr->retry); /* first time we're called */
+        psvr->rttinit = 1;
     }
 
     if (retransmit == 0)
-        psar->seq++;
+        psvr->seq++;
 
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_RELIABLE;
-    sendhdr.seq  = psar->seq;
+    sendhdr.seq  = psvr->seq;
     msgsend.msg_name = (void*)destaddr;
     msgsend.msg_namelen = destlen;
     msgsend.msg_iov = iovsend;
@@ -663,20 +686,20 @@ static int su_serv_send_recv_act(su_serv_t *psar, SA *destaddr, socklen_t destle
     struct timespec abstime = {0};
     suhdr_t *precvhdr;
 
-    rtt_newpack(&psar->rttinfo);		/* initialize for this packet */
-    psar->ackwaitnum ++;
+    rtt_newpack(&psvr->rttinfo);		/* initialize for this packet */
+    psvr->ackwaitnum ++;
 
 sendagain:
-    sendhdr.ts = rtt_ts(&psar->rttinfo);
-    if (sendmsg(psar->fd, &msgsend, 0) < 0) {
+    sendhdr.ts = rtt_ts(&psvr->rttinfo);
+    if (sendmsg(psvr->fd, &msgsend, 0) < 0) {
         ERR_RET("su_serv_send_recv_act sendmsg error");
         goto error_ret;
     }
 
-    waitsec = rtt_start(&psar->rttinfo);	/* calc timeout value & start timer */
+    waitsec = rtt_start(&psvr->rttinfo);	/* calc timeout value & start timer */
 #ifdef	SU_DEBUG_RTT
     fprintf(stderr, ColorRed "send seq %4d: " ColorEnd, sendhdr.seq);
-    rtt_debug(&psar->rttinfo);
+    rtt_debug(&psvr->rttinfo);
 #endif
 
     /* set timed wait time-point */
@@ -692,7 +715,7 @@ sendagain:
 #endif
 
 timedwaitagain:
-    ret = pthread_cond_timedwait(&psar->ackcond, &psar->lock, &abstime);
+    ret = pthread_cond_timedwait(&psvr->ackcond, &psvr->lock, &abstime);
     if (ret == 0) {
 #ifdef SU_DEBUG_TIMEVERBOSE
         struct timeval now;
@@ -700,16 +723,16 @@ timedwaitagain:
         log_msg(ColorBlue "pthread_cond_timedwait : %d.%d ack cond interrupt" ColorEnd,
                 now.tv_sec, now.tv_usec*1000);
 #endif
-        node = psar->ackrecvls.next;
-        for (; node != &psar->ackrecvls; node = node->next) {
+        node = psvr->ackrecvls.next;
+        for (; node != &psvr->ackrecvls; node = node->next) {
             packet = container_of(node, frames_t, node);
             r = &packet->recvhdr;
             if (su_cmp_ack_SU_RELIABLE(&sendhdr, r)) { break; }
         }
-        if ( node == &psar->ackrecvls ) {
+        if ( node == &psvr->ackrecvls ) {
             /* Be careful of the lock, locked -> timedwait -> unlock */
 #ifdef SU_DEBUG_LIST
-            log_msg("serv %x no found seq %d ack, timed wait again", psar, sendhdr.seq);
+            log_msg("serv %x no found seq %d ack, timed wait again", psvr, sendhdr.seq);
 #endif
             goto timedwaitagain;
         }
@@ -722,7 +745,7 @@ timedwaitagain:
 
 #if defined SU_DEBUG_PEER_RECV || defined SU_DEBUG_LIST
         log_msg("serv %x finded ack " ColorRed "%p" ColorEnd " seq %d datagram len %d",
-                psar, packet, r->seq, packet->len);
+                psvr, packet, r->seq, packet->len);
 #endif
 
 #ifdef	SU_DEBUG_RTT
@@ -741,9 +764,11 @@ timedwaitagain:
         log_msg(ColorBlue "pthread_cond_timedwait : %u.%u ETIMEOUT have expired" ColorEnd,
                 now.tv_sec, now.tv_usec*1000);
 #endif
-        if (rtt_timeout(&psar->rttinfo) < 0) {
+        if (rtt_timeout(&psvr->rttinfo) < 0) {
+#ifdef	SU_DEBUG_RTT
             err_msg(ColorYel "no response from server, giving up" ColorEnd);
-            psar->rttinit = 0;	/* reinit in case we're called again */
+#endif
+            psvr->rttinit = 0;	/* reinit in case we're called again */
             errno = ETIMEDOUT;
             goto error_ret;
         }
@@ -759,16 +784,16 @@ timedwaitagain:
     }
 
     /* calculate & store new RTT estimator values */
-    rtt_stop(&psar->rttinfo, rtt_ts(&psar->rttinfo) - precvhdr->ts);
+    rtt_stop(&psvr->rttinfo, rtt_ts(&psvr->rttinfo) - precvhdr->ts);
 
-    if (--psar->ackwaitnum == 0) {
-        su_serv_list_empty(psar, &psar->ackrecvls);
+    if (--psvr->ackwaitnum == 0) {
+        su_serv_list_empty(psvr, &psvr->ackrecvls);
     }
-    pthread_mutex_unlock(&psar->mutex);
-    pthread_mutex_unlock(&psar->lock);
+    pthread_mutex_unlock(&psvr->mutex);
+    pthread_mutex_unlock(&psvr->lock);
 
 #ifdef SU_DEBUG_LIST
-    log_msg("serv %x free node  " ColorRed "%p"ColorEnd" seq %d", psar, packet, sendhdr.seq);
+    log_msg("serv %x free node  " ColorRed "%p"ColorEnd" seq %d", psvr, packet, sendhdr.seq);
 #endif
 
     free(packet);
@@ -776,11 +801,11 @@ timedwaitagain:
     return(n);	/* return size of received datagram */
 
 error_ret:
-    if (--psar->ackwaitnum == 0) {
-        su_serv_list_empty(psar, &psar->ackrecvls);
+    if (--psvr->ackwaitnum == 0) {
+        su_serv_list_empty(psvr, &psvr->ackrecvls);
     }
-    pthread_mutex_unlock(&psar->mutex);
-    pthread_mutex_unlock(&psar->lock);
+    pthread_mutex_unlock(&psvr->mutex);
+    pthread_mutex_unlock(&psvr->lock);
     return(-1);
 }
 int su_serv_getsrcaddr_act(su_serv_t *psvr, frames_t *frame, SA *addr, socklen_t *addrlen)
@@ -806,27 +831,27 @@ int su_serv_getsrcaddr(su_serv_t *psvr, frames_t *frame, SA *addr, socklen_t *ad
     return su_serv_getsrcaddr_act(psvr, frame, addr, addrlen);
 }
 
-int su_serv_send(su_serv_t *psar, SA* destaddr, socklen_t destlen, const void *outbuff, int outbytes)
+int su_serv_send(su_serv_t *psvr, SA* destaddr, socklen_t destlen, const void *outbuff, int outbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
-    return su_serv_send_act(psar, destaddr, destlen, outbuff, outbytes);
+    return su_serv_send_act(psvr, destaddr, destlen, outbuff, outbytes);
 }
 
-int su_serv_request(su_serv_t *psar, SA *destaddr, socklen_t destlen,
+int su_serv_request(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
-    return su_serv_send_recv_act(psar, destaddr, destlen, outbuff, outbytes, inbuff, inbytes, 0);
+    return su_serv_send_recv_act(psvr, destaddr, destlen, outbuff, outbytes, inbuff, inbytes, 0);
 }
 
-int su_serv_request_retry(su_serv_t *psar, SA *destaddr, socklen_t destlen,
+int su_serv_request_retry(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes)
 {
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
-    return su_serv_send_recv_act(psar, destaddr, destlen, outbuff, outbytes, inbuff, inbytes, 1);
+    return su_serv_send_recv_act(psvr, destaddr, destlen, outbuff, outbytes, inbuff, inbytes, 1);
 }

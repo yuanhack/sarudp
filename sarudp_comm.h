@@ -32,7 +32,6 @@
 
 #pragma pack(push)
 #pragma pack(1)
-
 /* protocol header */
 typedef struct hdr {
     /* packet action  */
@@ -49,7 +48,6 @@ typedef struct hdr {
     uint32_t seq;               /* sequence # */
     uint32_t ts;                /* timestamp when sent */
 } suhdr_t;
-
 #pragma pack(pop)
 
 typedef struct sockaddr     SA;

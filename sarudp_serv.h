@@ -23,7 +23,7 @@ struct sar_udp_serv {
     cb_su_serv_receiver_t * reliable_request_handle;
     cb_su_serv_receiver_t * ordinary_request_handle;
 
-    pthread_t   *tid;
+    pthread_t   *tids;
     int         run;
     int         tnum;
 

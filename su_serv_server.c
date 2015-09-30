@@ -38,17 +38,16 @@ int main(int argc, char **argv)
 #endif
 
     if (su_serv_create(&svr, (SA*)&servaddr, sizeof(servaddr), 10) < 0)
-        err_quit("su_serv_create error");
+        err_sys("su_serv_create error");
     log_msg("listen port %d successful", 55555);
 
     su_serv_reliable_request_handle_install(&svr, reliable_data_in);
     su_serv_ordinary_request_handle_install(&svr, ordinary_data_in);
 
-    sleep(2);
+    //while (1) pause();
+    sleep(10);
 
     su_serv_destroy(&svr);
-
-    while (1) pause();
 
     exit(0);
 }

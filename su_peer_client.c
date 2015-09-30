@@ -70,13 +70,14 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-	cli_su_peer_request(stdin, &sar);
-    //cli_su_peer_request_random(&sar);
+	//cli_su_peer_request(stdin, &sar);
+    cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
 	cli_su_peer_send(stdin, &sar);
 #endif
 
+    return 0;
     exit(0);
 }
 
@@ -150,8 +151,10 @@ void cli_su_peer_request_random(su_peer_t *psar)
     do {
         snprintf(sendline, sizeof(sendline), "%d\n", rand());
         n = su_peer_request(psar, sendline, strlen(sendline), recvline, MAXLINE);
-        if (n < 0)
+        if (n < 0) {
             err_ret("su_peer_request error");
+            break;
+        }
 
         recvline[n] = 0;	/* null terminate */
         fprintf(stdout, "\e[32m%s\e[m", recvline); 

@@ -141,7 +141,13 @@ static void *thread_request_handle(void *v)
         pthread_mutex_lock(&psar->lock);
         while ((synnode = psar->synrecvls.next) == &psar->synrecvls) {
             maketimeout_seconds(&abstime, 1);
+            pthread_testcancel();
             ret = pthread_cond_timedwait(&psar->syncond, &psar->lock, &abstime);
+            if (!psar->run) {
+                pthread_mutex_unlock(&psar->lock);
+                goto quit;
+            }
+            pthread_testcancel();
             if ( ret == ETIMEDOUT ) {
                 pthread_mutex_lock(&psar->cachelock);
                 reliable_ack_unsave(psar);
@@ -241,57 +247,56 @@ static void *thread_request_handle(void *v)
         pthread_mutex_unlock(&psar->cachelock);
     }
 
+quit:
     return (void*)0;
 }
 
-static int thread_install(void *v)
+static int su_peer_thread_install(su_peer_t *psar)
 {
-    su_peer_t *psar = (su_peer_t*)v;
-
-    if (psar->tid)
-        return 0;
-
     pthread_attr_t attr;
 
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 1024*1024); //set stack size 1M
-    //pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    psar->run = 0;
+    psar->reliable_request_handle = 0;
+    psar->ordinary_request_handle = 0;
 
-    psar->run = 1;
-    if ((errno = pthread_create(&psar->tid, &attr,
-                    thread_request_handle, psar)) != 0) {
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 1024*1024);
+
+    errno = pthread_create(&psar->tid, &attr, thread_request_handle, psar);
+    if (errno != 0) {
         pthread_attr_destroy(&attr);
         return (-1);
     }
-
     pthread_attr_destroy(&attr);
+    psar->run = 1;
+    return 0;
+}
+static int su_peer_thread_uninstall(su_peer_t *psar)
+{
+    int i, n;
+    void *ret;
 
+    psar->run = 0;
+    errno = pthread_join(psar->tid, &ret);
+    if (errno != 0)
+        err_sys("peer %x can't join with thread %x error");
+    log_msg("peer %x join with thread %x code %d", psar, psar->tid, ret);
     return 0;
 }
 
-int su_peer_reliable_request_handle_install(su_peer_t *psar,
+void su_peer_reliable_request_handle_install(su_peer_t *psar,
         cb_supeer_recv_t* reliable_request_handle)
 {
-    int ret;
-
     pthread_mutex_lock(&psar->lock);
     psar->reliable_request_handle = reliable_request_handle;
-    ret = thread_install(psar);
     pthread_mutex_unlock(&psar->lock);
-
-    return ret;
 }
-int su_peer_ordinary_request_handle_install(su_peer_t *psar,
+void su_peer_ordinary_request_handle_install(su_peer_t *psar,
         cb_supeer_recv_t* ordinary_request_handle)
 {
-    int ret;
-
     pthread_mutex_lock(&psar->lock);
     psar->ordinary_request_handle = ordinary_request_handle;
-    ret = thread_install(psar);
     pthread_mutex_unlock(&psar->lock);
-
-    return ret;
 }
 void su_peer_reliable_request_handle_uninstall(su_peer_t *psar)
 {
@@ -379,7 +384,7 @@ recvagain:
     }
 
 #ifdef SU_DEBUG_PEER_RECV
-    log_msg("peer %x recv %s:%d raw bytes %d", psar,
+    LOG_MSG("peer %x recv %s:%d raw bytes %d", psar,
             ipbuff, port, ret);
 #endif
 
@@ -409,10 +414,10 @@ recvagain:
     psrc = &frame->srcaddr; // foreign host
     pdst = &psar->destaddr; // localhost
 
-//    showaddr6_8_16(&pdst->addr6);
-//    showaddr6_8_16(&psrc->addr6);
-//    showaddr6_16_8(&psrc->addr6);
-//    showaddr6_32_4(&psrc->addr6);
+    showaddr6_8_16(&pdst->addr6);
+    showaddr6_8_16(&psrc->addr6);
+    showaddr6_16_8(&psrc->addr6);
+    showaddr6_32_4(&psrc->addr6);
 
 #ifndef promiscuous_mode
     /*  Filter: Check address and port
@@ -433,6 +438,7 @@ recvagain:
     pthread_mutex_lock(&psar->lock);
     if (act == SU_SYN && frame->len > 0) {
         if (!psar->run) {
+            log_msg("peer %x thread handle no run");
             pthread_mutex_unlock(&psar->lock);
             free(frame);
             goto recvagain;
@@ -499,21 +505,24 @@ int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t
         void *paddr;
         SA4 s4;
         SA6 s6;
-        if (destlen == sizeof(SA4)) {
-            memcpy(&s4, destaddr, destlen);  /* for sin_family and more... */
-            s4.sin_port = htons(port);
-            inet_pton(PF_INET, "0.0.0.0", &s4.sin_addr.s_addr);
-            paddr = &s4;
-        } else if (destlen == sizeof(SA6)) {
-            memcpy(&s6, destaddr, destlen); /* for sin6_family and more...  */
-            s6.sin6_port = htons(port);
-            inet_pton(PF_INET6, "::", &s6.sin6_addr.__in6_u); // Uncorroborated
-            paddr = &s6;
-        } else {
-            close(psar->fd);
-            psar->fd = -1;
-            errno = EINVAL;
-            return -1;
+        switch (destaddr->sa_family) {
+            case PF_INET:
+                memcpy(&s4, destaddr, destlen);  /* for sin_family and more... */
+                s4.sin_port = htons(port);
+                inet_pton(PF_INET, "0.0.0.0", &s4.sin_addr.s_addr);
+                paddr = &s4;
+                break;
+            case PF_INET6:
+                memcpy(&s6, destaddr, destlen); /* for sin6_family and more...  */
+                s6.sin6_port = htons(port);
+                inet_pton(PF_INET6, "::", &s6.sin6_addr.__in6_u);
+                paddr = &s6;
+                break;
+            default:
+                close(psar->fd);
+                psar->fd = -1;
+                errno = EINVAL;
+                return -1;
         }
         if (bind(psar->fd, paddr, destlen) < 0) {
             close(psar->fd);
@@ -542,17 +551,25 @@ int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t
     list_init(&psar->lsackcache);
     rbt_init(&psar->rbackcache, cache_getkey, search_cache_cmp);
 
+    psar->nowsynframe = 0;
+
     pthread_mutex_init(&psar->mutex, 0);
     pthread_mutex_init(&psar->lock, 0);
     pthread_cond_init(&psar->ackcond, 0);
     pthread_cond_init(&psar->syncond, 0);
     pthread_mutex_init(&psar->cachelock, 0);
 
-    psar->tid = 0;
-    psar->run = 0;
-    psar->nowsynframe = 0;
-    psar->reliable_request_handle = 0;
-    psar->ordinary_request_handle = 0;
+    if (su_peer_thread_install(psar) < 0) {
+        pthread_mutex_destroy(&psar->mutex);
+        pthread_mutex_destroy(&psar->lock);
+        pthread_cond_destroy(&psar->ackcond);
+        pthread_cond_destroy(&psar->syncond);
+        pthread_mutex_destroy(&psar->cachelock);
+
+        close(psar->fd);
+        psar->fd = -1;
+        return -1;
+    }
 
     pthread_mutex_lock(&emutex);
     if (sugem == 0) {
@@ -583,15 +600,44 @@ int su_peer_create(su_peer_t *psar, const SA *ptoaddr, socklen_t servlen)
 
 void su_peer_destroy(su_peer_t *psar)
 {
-    if (psar->fd >= 0) {
-        close(psar->fd);
-        psar->fd = -1;
-        return;
-    }
+    su_peer_thread_uninstall(psar);
+
+    pthread_mutex_destroy(&psar->mutex);
     pthread_mutex_destroy(&psar->lock);
     pthread_cond_destroy(&psar->ackcond);
+    pthread_cond_destroy(&psar->syncond);
+    pthread_mutex_destroy(&psar->cachelock);
 
-    // unfinished ...
+    close(psar->fd);
+    psar->fd = -1;
+
+    su_peer_list_empty(psar, &psar->ackrecvls);
+    su_peer_list_empty(psar, &psar->synrecvls);
+
+    cache_t *frees, *cache = container_of 
+        ( list_head(&psar->lsackcache, frames_t, node), cache_t, frame );
+
+    while ( &psar->lsackcache != &cache->frame.node ) {
+        frees = cache;
+        cache = container_of
+            ( list_next(&cache->frame, frames_t, node), cache_t, frame );
+
+        /* Disconnect associated And Cleanup All */
+        list_remove(&frees->frame.node);
+        rb_erase(&frees->rbn, &psar->rbackcache);
+#if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
+        pthread_t tid = pthread_self();
+        char ipbuff[INET6_ADDRSTRLEN];
+        int port;
+        su_get_ip_port_f(&frees->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+        log_msg("peer %x time %u key(%s:%d:%u:%u)" ColorRed " _ACK cache %p" ColorEnd,
+                psar, frees->ts, ipbuff, port,
+                frees->frame.recvhdr.sid, frees->frame.recvhdr.seq, frees);
+#endif
+        free(frees);
+    }
+
+    LOG_MSG("peer %x finish destroyed", psar);
 }
 
 static int su_peer_send_act(su_peer_t *psar, const void *outbuff, int outbytes)
@@ -883,4 +929,3 @@ int su_peer_getsrcaddr(su_peer_t *psar, SA *addr, socklen_t *addrlen)
     if (addr == 0 || addrlen == 0) { errno = EINVAL; return -1;}
     return su_peer_getsrcaddr_act(psar, addr, addrlen);
 }
-
