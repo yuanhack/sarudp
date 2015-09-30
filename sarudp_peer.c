@@ -414,10 +414,10 @@ recvagain:
     psrc = &frame->srcaddr; // foreign host
     pdst = &psar->destaddr; // localhost
 
-    showaddr6_8_16(&pdst->addr6);
-    showaddr6_8_16(&psrc->addr6);
-    showaddr6_16_8(&psrc->addr6);
-    showaddr6_32_4(&psrc->addr6);
+//    showaddr6_8_16(&pdst->addr6);
+//    showaddr6_8_16(&psrc->addr6);
+//    showaddr6_16_8(&psrc->addr6);
+//    showaddr6_32_4(&psrc->addr6);
 
 #ifndef promiscuous_mode
     /*  Filter: Check address and port
@@ -543,7 +543,7 @@ int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t
 
     psar->seq = 0;
     psar->rttinit = 0;
-    psar->retry = 0; //RTT_MAXNREXMT;
+    psar->retry = RTT_MAXNREXMT;
 
     psar->ackwaitnum = 0;
     list_init(&psar->ackrecvls);
