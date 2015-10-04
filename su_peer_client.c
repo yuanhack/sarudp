@@ -70,8 +70,8 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-	//cli_su_peer_request(stdin, &sar);
-    cli_su_peer_request_random(&sar);
+	cli_su_peer_request(stdin, &sar);
+    //cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
 	cli_su_peer_send(stdin, &sar);
@@ -102,7 +102,7 @@ void udpin_ordinary(su_peer_t *psar, char *buff, int len)
 
     printf("ordinary recv from %s:%d datagram len %d " ColorGre"%s\n"ColorEnd, 
             inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
-
+    su_peer_reply(psar, 0, 0);
 }
 
 void sigint(int no)
@@ -149,7 +149,8 @@ void cli_su_peer_request_random(su_peer_t *psar)
     srand(time(0));
 
     do {
-        snprintf(sendline, sizeof(sendline), "%d\n", rand());
+        n = snprintf(sendline, sizeof(sendline), "%05d", rand()%10000);
+        log_msg("send request  %d[%s]", n, sendline);
         n = su_peer_request(psar, sendline, strlen(sendline), recvline, MAXLINE);
         if (n < 0) {
             err_ret("su_peer_request error");
@@ -157,10 +158,9 @@ void cli_su_peer_request_random(su_peer_t *psar)
         }
 
         recvline[n] = 0;	/* null terminate */
-        fprintf(stdout, "\e[32m%s\e[m", recvline); 
-        fflush(stdout);
+        log_msg("recv response %d[\e[32m%s\e[m]", n, recvline);
 
-        usleep(1);     // microsecond
+        usleep(10 * 1000);     // microsecond
     } while (1);
 }
 

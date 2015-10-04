@@ -71,11 +71,15 @@ int main(int argc, char **argv)
 void udpin_reliable(su_peer_t *psar, char *buff, int len)
 {
     static long long c=0;
-    struct sockaddr_in s4;
+    SAUN s;
     socklen_t slen;
+    char ip[INET6_ADDRSTRLEN];
+    int port;
 
-    su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
-    printf("reliable recv from %s:%d datagram len %d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len);
+    su_peer_getsrcaddr(psar, (struct sockaddr*)&s, &slen);
+    //su_get_ip_port(&s, ip, sizeof(ip), &port);
+    su_get_ip_port_f(&s, ip, sizeof(ip), &port);
+    printf("reliable recv from %s:%d datagram len %d\n", ip, port, len);
 
     //c+=10; // sarudp header len;
 
@@ -91,16 +95,19 @@ void udpin_reliable(su_peer_t *psar, char *buff, int len)
 void udpin_ordinary(su_peer_t *psar, char *buff, int len)
 {
     static long long c=0;
-    struct sockaddr_in s4;
+    SAUN s;
     socklen_t slen;
+    char ip[INET6_ADDRSTRLEN];
+    int port;
 
-    su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
-    printf("ordinary recv from %s:%d datagrams len %d\n", inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len);
-
-    //c+=10; // sarudp header len;
+    su_peer_getsrcaddr(psar, (struct sockaddr*)&s, &slen);
+    //su_get_ip_port(&s, ip, sizeof(ip), &port);
+    su_get_ip_port_f(&s, ip, sizeof(ip), &port);
+    printf("ordinary recv from %s:%d datagrams len %d\n", ip, port, len);
 
     printf("ordinary recv len %d datagrams " ColorYel "%s" ColorEnd 
             " count = %llu\n"ColorEnd, len, buff, c+=len);
+    su_peer_reply(psar, 0, 0);
 }
 
 void sigint(int no)

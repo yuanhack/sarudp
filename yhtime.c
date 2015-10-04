@@ -1,5 +1,4 @@
 #include "yhtime.h"
-#include "error.h"
 
 void maketimeout_minutes(struct timespec *tsp, long minutes)
 {
