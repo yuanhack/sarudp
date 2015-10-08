@@ -687,9 +687,9 @@ static int su_peer_send_recv_act(su_peer_t *psar,
         const void *outbuff, int outbytes,
         void *inbuff, int inbytes, int retransmit)
 {
-    int			n;
-    struct iovec	iovsend[2]={{0}};
-    struct msghdr	msgsend = {0};	    /* assumed init to 0 */
+    int             n;
+    struct iovec    iovsend[2]={{0}};
+    struct msghdr   msgsend = {0};	    /* assumed init to 0 */
     suhdr_t *r, sendhdr = {0};          /* protocol header */
     int ret, waitsec;
 
@@ -698,13 +698,24 @@ static int su_peer_send_recv_act(su_peer_t *psar,
 
     pthread_mutex_lock(&psar->mutex);
     pthread_mutex_lock(&psar->lock);
+
+    if (retransmit == 0) {
+        psar->seq++;
+        psar->retransmission = 1;
+    } else {
+        if (psar->retransmission == 0) {
+            pthread_mutex_unlock(&psar->mutex);
+            pthread_mutex_unlock(&psar->lock);
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        psar->retransmission --;
+    }
+
     if (psar->rttinit == 0) {
         rtt_init(&psar->rttinfo, psar->retry); /* first time we're called */
         psar->rttinit = 1;
     }
-
-    if (retransmit == 0)
-        psar->seq++;
 
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_RELIABLE;

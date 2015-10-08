@@ -16,6 +16,7 @@ struct sar_udp_serv {
     uint32_t seq;
     struct rtt_info rttinfo;
     int retry;
+    int retransmission;
     int rttinit;
 
     /* event driver */

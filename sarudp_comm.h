@@ -22,7 +22,7 @@
 #include <sys/types.h>
 
 #define REALDATAMAX  1024       /* datagram max size */
-#define CACHETIMEOUT 40         /* reliable request-result cached seconds */
+#define CACHETIMEOUT 90         /* reliable request-result cached seconds */
 
 #define ColorRed    "\e[31m"
 #define ColorGre    "\e[32m"

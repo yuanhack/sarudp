@@ -16,6 +16,7 @@ struct sar_udp_peer {
     uint32_t seq;
     struct rtt_info rttinfo;
     int retry;
+    int retransmission;        /* retransmit counting  */
     int rttinit;
 
     /* event driver */

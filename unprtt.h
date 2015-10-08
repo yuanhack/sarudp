@@ -14,9 +14,10 @@ struct rtt_info {
     uint8_t     rtt_retry;
 };
 
-#define	RTT_RXTMIN      2	/* min retransmit timeout value, seconds */
-#define	RTT_RXTMAX     60	/* max retransmit timeout value, seconds */
-#define	RTT_MAXNREXMT 	3	/* max #times to retransmit */
+#define RTT_RXTMIN      2   /* min retransmit timeout value, seconds */
+#define RTT_RXTMAX      60  /* max retransmit timeout value, seconds */
+#define RTT_MAXNREXMT   4   /* max #times to retransmit */
+#define RTT_MAXRTO      12
 
 				/* function prototypes */
 void	 rtt_debug(struct rtt_info *);

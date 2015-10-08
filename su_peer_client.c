@@ -156,6 +156,15 @@ void cli_su_peer_request_random(su_peer_t *psar)
         n = su_peer_request(psar, sendline, strlen(sendline), recvline, MAXLINE);
         if (n < 0) {
             err_ret("su_peer_request error");
+            n = su_peer_request_retry(psar, sendline, strlen(sendline), recvline, MAXLINE);
+            if (n < 0) {
+                err_ret("su_peer_request_retry 1 error");
+                n = su_peer_request_retry(psar, sendline, strlen(sendline), recvline, MAXLINE);
+                if (n < 0) {
+                    err_ret("su_peer_request_retry 2 error");
+                    break;
+                }
+            }
             break;
         }
 

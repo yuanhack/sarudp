@@ -116,6 +116,8 @@ int
 rtt_timeout(struct rtt_info *ptr)
 {
 	ptr->rtt_rto *= 2;		/* next RTO */
+    if (ptr->rtt_rto > RTT_MAXRTO)
+        ptr->rtt_rto = RTT_MAXRTO;
 
 	if (++ptr->rtt_nrexmt > ptr->rtt_retry)
 		return(-1);			/* time to give up for this packet */

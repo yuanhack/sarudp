@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 	if (argc != 2)
 		err_quit("usage: %s <Port>", argv[0]);
 
-#if 0
+#if 1
     daemon_init(0, 0, 0, 0);
 #endif
 

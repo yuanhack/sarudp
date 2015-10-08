@@ -640,9 +640,9 @@ static int su_cmp_ack_SU_RELIABLE(suhdr_t *syn, suhdr_t *ack)
 static int su_serv_send_recv_act(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes, int retransmit)
 {
-    int			n;
-    struct iovec	iovsend[2]={{0}};
-    struct msghdr	msgsend = {0};	    /* assumed init to 0 */
+    int             n;
+    struct iovec    iovsend[2]={{0}};
+    struct msghdr   msgsend = {0};	    /* assumed init to 0 */
     suhdr_t *r, sendhdr = {0};          /* protocol header */
     int ret, waitsec;
 
@@ -651,13 +651,24 @@ static int su_serv_send_recv_act(su_serv_t *psvr, SA *destaddr, socklen_t destle
 
     pthread_mutex_lock(&psvr->mutex);
     pthread_mutex_lock(&psvr->lock);
+
+    if (retransmit == 0) {
+        psvr->seq++;
+        psvr->retransmission = 1;
+    } else {
+        if (psvr->retransmission == 0) {
+            pthread_mutex_unlock(&psvr->mutex);
+            pthread_mutex_unlock(&psvr->lock);
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        psvr->retransmission --;
+    }
+
     if (psvr->rttinit == 0) {
         rtt_init(&psvr->rttinfo, psvr->retry); /* first time we're called */
         psvr->rttinit = 1;
     }
-
-    if (retransmit == 0)
-        psvr->seq++;
 
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_RELIABLE;
