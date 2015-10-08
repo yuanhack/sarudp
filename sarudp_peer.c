@@ -273,7 +273,6 @@ static int su_peer_thread_install(su_peer_t *psar)
 }
 static int su_peer_thread_uninstall(su_peer_t *psar)
 {
-    int i, n;
     void *ret;
 
     psar->run = 0;
@@ -803,7 +802,9 @@ timedwaitagain:
                 now.tv_sec, now.tv_usec*1000);
 #endif
         if (rtt_timeout(&psar->rttinfo) < 0) {
+#ifdef	SU_DEBUG_RTT
             err_msg(ColorYel "no response from server, giving up" ColorEnd);
+#endif
             psar->rttinit = 0;	/* reinit in case we're called again */
             errno = ETIMEDOUT;
             goto error_ret;
@@ -879,14 +880,13 @@ static int su_peer_reply_act(su_peer_t *psar,
 
     return(outbytes);
 }
-int su_peer_getsrcaddr_act(su_peer_t *psar, SA *addr, socklen_t *addrlen)
+int su_peer_getsrcaddr_act(su_peer_t *psar, SAUN *addr)
 {
     if (psar->nowsynframe == 0) {
         err_msg("peer %x is no request source");
         return -1;
     }
-    memcpy(addr, &psar->nowsynframe->srcaddr, psar->nowsynframe->srclen);
-    *addrlen = psar->nowsynframe->srclen;
+    memcpy(addr, &psar->nowsynframe->srcaddr, sizeof(SAUN));
     return 0;
 }
 
@@ -924,8 +924,8 @@ int su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes,
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
     return su_peer_send_recv_act(psar, outbuff, outbytes, inbuff, inbytes, 1);
 }
-int su_peer_getsrcaddr(su_peer_t *psar, SA *addr, socklen_t *addrlen)
+int su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr)
 {
-    if (addr == 0 || addrlen == 0) { errno = EINVAL; return -1;}
-    return su_peer_getsrcaddr_act(psar, addr, addrlen);
+    if (addr == 0) { errno = EINVAL; return -1;}
+    return su_peer_getsrcaddr_act(psar, addr);
 }

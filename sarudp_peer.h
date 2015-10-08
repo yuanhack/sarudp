@@ -55,7 +55,7 @@ int  su_peer_request(su_peer_t *psar, const void *outbuff, int outbytes, void *i
 int  su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
 
 int  su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes);
-int  su_peer_getsrcaddr(su_peer_t *psar, SA *addr, socklen_t *addrlen);
+int  su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr);
 
 void su_peer_reliable_request_handle_install(su_peer_t *psar, cb_supeer_recv_t* reliable_request_handle);
 void su_peer_ordinary_request_handle_install(su_peer_t *psar, cb_supeer_recv_t* ordinary_request_handle);

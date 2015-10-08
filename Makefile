@@ -2,8 +2,9 @@ CC = gcc
 CFLAGS += -g
 CFLAGS += -D_REENTRANT -Wall
 CFLAGS += -O0
-CFLAGS += -Wno-unused-variable
-CFLAGS += -Wno-unused-but-set-variable
+
+#CFLAGS += -Wno-unused-variable
+#CFLAGS += -Wno-unused-but-set-variable
 
 CFLAGS += -Dpromiscuous_mode
 

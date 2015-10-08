@@ -26,7 +26,6 @@ void sigint(int no);
 int main(int argc, char **argv)
 {
     su_peer_t sar;
-    char ip[256], errinfo[256];
 
     signal(SIGINT, sigint);
 
@@ -62,8 +61,13 @@ int main(int argc, char **argv)
     su_peer_reliable_request_handle_install(&sar, udpin_reliable);
     su_peer_ordinary_request_handle_install(&sar, udpin_ordinary);
 
+#if 1
     while (1) 
         pause();
+#else
+    sleep(30);
+    su_peer_destroy(&sar);
+#endif
 
     exit(0);
 }
@@ -72,42 +76,59 @@ void udpin_reliable(su_peer_t *psar, char *buff, int len)
 {
     static long long c=0;
     SAUN s;
-    socklen_t slen;
     char ip[INET6_ADDRSTRLEN];
     int port;
 
-    su_peer_getsrcaddr(psar, (struct sockaddr*)&s, &slen);
-    //su_get_ip_port(&s, ip, sizeof(ip), &port);
-    su_get_ip_port_f(&s, ip, sizeof(ip), &port);
+    su_peer_getsrcaddr(psar, &s);
+
+    //su_get_ip_port(&s, ip, sizeof(ip), &port); // small ip address
+    su_get_ip_port_f(&s, ip, sizeof(ip), &port); // fulll ip address 
+
     printf("reliable recv from %s:%d datagram len %d\n", ip, port, len);
 
     //c+=10; // sarudp header len;
 
     printf("reliable recv len %d datagrams " ColorGre "%s" ColorEnd 
             " count = %llu\n"ColorEnd, len, buff, c+=len);
+#if 1
     // reply successful and response data
     if (su_peer_reply(psar, buff, len) < 0) {
         ERR_RET("su_peer_reply error");
     }
+#else
     // reply successful but Do not carry data
-    su_peer_reply(psar, 0, 0);
+    if (su_peer_reply(psar, 0, 0) < 0) {
+        ERR_RET("su_peer_reply error");
+    }
+#endif
 }
 void udpin_ordinary(su_peer_t *psar, char *buff, int len)
 {
     static long long c=0;
     SAUN s;
-    socklen_t slen;
     char ip[INET6_ADDRSTRLEN];
     int port;
 
-    su_peer_getsrcaddr(psar, (struct sockaddr*)&s, &slen);
-    //su_get_ip_port(&s, ip, sizeof(ip), &port);
-    su_get_ip_port_f(&s, ip, sizeof(ip), &port);
+    su_peer_getsrcaddr(psar, &s);
+
+    //su_get_ip_port(&s, ip, sizeof(ip), &port); // small ip address
+    su_get_ip_port_f(&s, ip, sizeof(ip), &port); // fulll ip address 
+
     printf("ordinary recv from %s:%d datagrams len %d\n", ip, port, len);
 
     printf("ordinary recv len %d datagrams " ColorYel "%s" ColorEnd 
             " count = %llu\n"ColorEnd, len, buff, c+=len);
-    su_peer_reply(psar, 0, 0);
+#if 1
+    // reply successful and response data
+    if (su_peer_reply(psar, buff, len) < 0) {
+        ERR_RET("su_peer_reply error");
+    }
+#else
+    // reply successful but Do not carry data
+    if (su_peer_reply(psar, 0, 0) < 0) {
+        ERR_RET("su_peer_reply error");
+    }
+#endif
 }
 
 void sigint(int no)

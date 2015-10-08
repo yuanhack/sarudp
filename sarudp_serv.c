@@ -122,25 +122,15 @@ void request_handle(su_serv_t *psvr, frames_t * frame)
     }
 }
 
-void thread_cleanup(void *sv)
-{
-    su_serv_t *psvr = sv;
-    pthread_mutex_unlock(&psvr->lock);
-}
-
 static void *thread_request_handle(void *v)
 {
-    su_serv_t *psvr = (su_serv_t*)v;
-    pthread_t tid = pthread_self();
-    struct list *synnode;
-    frames_t *frame;
-
     int ret;
+    struct list *synnode;
     struct timespec abstime = {0};
+    frames_t *frame;
+    su_serv_t *psvr = (su_serv_t*)v;
 
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &ret);
-    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, 0);
-    pthread_cleanup_push(thread_cleanup, psvr);
+    pthread_t tid __attribute__((unused)) = pthread_self();
 
     for (;psvr->run;) {
         pthread_mutex_lock(&psvr->lock);
@@ -236,7 +226,6 @@ static void *thread_request_handle(void *v)
     }
 
 quit:
-    pthread_cleanup_pop(0);
     pthread_exit(0);
 }
 
@@ -280,7 +269,7 @@ static int su_serv_thread_install(su_serv_t *psvr, int nthread)
 }
 static int su_serv_thread_uninstall(su_serv_t *psvr)
 {
-    int i, n;
+    int i;
     void *ret;
 
     psvr->run = 0;

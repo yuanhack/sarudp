@@ -1,5 +1,10 @@
 #include "sarudp_comm.h"
 
+static uint8_t ipv4lead[12] =  {
+    0x0, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0xff,0xff};
+
 /* *
  * Not only compare the address and port also offers rbtree node sorting
  * */

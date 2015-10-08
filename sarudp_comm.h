@@ -88,11 +88,6 @@ typedef struct rb_key_cache {
     uint32_t  seq;
 } rb_key_cache_t;
 
-static uint8_t ipv4lead[12] =  {
-    0x0, 0x0, 0x0, 0x0,
-    0x0, 0x0, 0x0, 0x0,
-    0x0, 0x0, 0xff,0xff};
-
 inline int sockaddr_in6_cmp( struct sockaddr_in6 *p1, struct sockaddr_in6 *p2);
 inline int sockaddr_in4_cmp( struct sockaddr_in *p1,  struct sockaddr_in *p2);
 inline const void* cache_getkey(const void *pnode);
@@ -106,16 +101,16 @@ inline const int insert_cache_cmp(const void * node1, const void* node2);
 inline struct   rb_node * rb_search(rb_root_t *root, const void *key);
 inline int      rb_insert(struct rb_root *root, struct rb_node *new_node);
 
+void showaddr6_8_16(SA6 *ps);
+void showaddr6_16_8(SA6 *ps);
+void showaddr6_32_4(SA6 *ps);
+
+
 void su_get_ip_port(SAUN *s, char *ipbuff, int len, int *port);
 void su_get_ip(SAUN *s, char *ipbuff, int len);
 void su_get_port(SAUN *s, int *port);
 
 void su_get_ip_port_f(SAUN *s, char *ipbuff, int len, int *port);
 void su_get_ip_f(SAUN *s, char *ipbuff, int len);
-
-void showaddr6_8_16(SA6 *ps);
-void showaddr6_16_8(SA6 *ps);
-void showaddr6_32_4(SA6 *ps);
-
 
 #endif /* __YH_SARUDP_COMM_H__ */

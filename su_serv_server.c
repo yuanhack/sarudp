@@ -19,14 +19,16 @@ void ordinary_data_in(su_serv_t *psar, frames_t *frame, char *buff, int len);
 int main(int argc, char **argv)
 {
     su_serv_t svr;
-    char ip[256], errinfo[256];
+    //char ip[256], errinfo[256];
 
     signal(SIGINT, sigint);
 
 	if (argc != 2)
 		err_quit("usage: %s <Port>", argv[0]);
 
+#if 0
     daemon_init(0, 0, 0, 0);
+#endif
 
     /* The address is not used as a client, can be arbitrarily set  */
 #if 0
@@ -50,10 +52,13 @@ int main(int argc, char **argv)
     su_serv_reliable_request_handle_install(&svr, reliable_data_in);
     su_serv_ordinary_request_handle_install(&svr, ordinary_data_in);
 
-    while (1) pause();
-    //sleep(10);
-
+#if 1
+    while (1)
+        pause();
+#else
+    sleep(30);
     su_serv_destroy(&svr);
+#endif
 
     exit(0);
 }
@@ -65,9 +70,6 @@ void sigint(int no)
 }
 void reliable_data_in(su_serv_t *psar, frames_t *frame, char *buff, int len)
 {
-    struct sockaddr_in s4;
-    socklen_t slen; 
-    SAUN sa;
     char ipbuff[INET6_ADDRSTRLEN];
     int port;
 
@@ -80,8 +82,6 @@ void reliable_data_in(su_serv_t *psar, frames_t *frame, char *buff, int len)
 }
 void ordinary_data_in(su_serv_t *psar, frames_t *frame, char *buff, int len)
 {
-    socklen_t slen; 
-    SAUN sa;
     char ipbuff[INET6_ADDRSTRLEN];
     int port;
 

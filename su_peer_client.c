@@ -70,8 +70,8 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-	cli_su_peer_request(stdin, &sar);
-    //cli_su_peer_request_random(&sar);
+	//cli_su_peer_request(stdin, &sar);
+    cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
 	cli_su_peer_send(stdin, &sar);
@@ -83,25 +83,29 @@ int main(int argc, char **argv)
 
 void udpin_reliable(su_peer_t *psar, char *buff, int len)
 {
-    struct sockaddr_in s4;
-    socklen_t slen;
+    SAUN saddr;
+    char ip[INET6_ADDRSTRLEN];
+    int port;
 
-    su_peer_getsrcaddr(psar, (SA*)&s4, &slen);
+    su_peer_getsrcaddr(psar, &saddr);
+    su_get_ip_port(&saddr, ip, sizeof(ip), &port);
 
     printf("reliable recv from %s:%d datagrams len %d " ColorGre"%s\n"ColorEnd, 
-            inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
+            ip, port, len, buff);
 
     su_peer_reply(psar, buff, len);
 }
 void udpin_ordinary(su_peer_t *psar, char *buff, int len)
 {
-    struct sockaddr_in s4;
-    socklen_t slen;
+    SAUN saddr;
+    char ip[INET6_ADDRSTRLEN];
+    int port;
 
-    su_peer_getsrcaddr(psar, (struct sockaddr*)&s4, &slen);
+    su_peer_getsrcaddr(psar, &saddr);
+    su_get_ip_port(&saddr, ip, sizeof(ip), &port);
 
     printf("ordinary recv from %s:%d datagram len %d " ColorGre"%s\n"ColorEnd, 
-            inet_ntoa(s4.sin_addr), ntohs(s4.sin_port), len, buff);
+            ip, port, len, buff);
     su_peer_reply(psar, 0, 0);
 }
 
@@ -131,8 +135,6 @@ void cli_su_peer_request(FILE *fp, su_peer_t *psar)
         else if (ret > 0) {
             /* Foreign Host Receive successful and have a response */
             recvline[ret] = 0;	/* null terminate */
-            //fprintf(stdout, "\e[32m%s\e[m", recvline); 
-            //fflush(stdout);
             n = snprintf(outline, sizeof(outline), "Response: \e[32m%s\e[m", recvline); 
             write(2, outline, n);
         } else {
