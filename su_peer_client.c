@@ -70,8 +70,8 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-	//cli_su_peer_request(stdin, &sar);
-    cli_su_peer_request_random(&sar);
+	cli_su_peer_request(stdin, &sar);
+    //cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
 	cli_su_peer_send(stdin, &sar);
@@ -90,7 +90,8 @@ void udpin_reliable(su_peer_t *psar, char *buff, int len)
     su_peer_getsrcaddr(psar, &saddr);
     su_get_ip_port(&saddr, ip, sizeof(ip), &port);
 
-    printf("reliable recv from %s:%d datagrams len %d " ColorGre"%s\n"ColorEnd, 
+    printf("reliable recv from %s:%d datagrams len %d "
+            ColorGre "%s\n" ColorEnd,
             ip, port, len, buff);
 
     su_peer_reply(psar, buff, len);
@@ -104,9 +105,9 @@ void udpin_ordinary(su_peer_t *psar, char *buff, int len)
     su_peer_getsrcaddr(psar, &saddr);
     su_get_ip_port(&saddr, ip, sizeof(ip), &port);
 
-    printf("ordinary recv from %s:%d datagram len %d " ColorGre"%s\n"ColorEnd, 
+    printf("ordinary recv from %s:%d datagram len %d "
+            ColorGre "%s\n" ColorEnd,
             ip, port, len, buff);
-    su_peer_reply(psar, 0, 0);
 }
 
 void sigint(int no)
@@ -158,14 +159,9 @@ void cli_su_peer_request_random(su_peer_t *psar)
             err_ret("su_peer_request error");
             n = su_peer_request_retry(psar, sendline, strlen(sendline), recvline, MAXLINE);
             if (n < 0) {
-                err_ret("su_peer_request_retry 1 error");
-                n = su_peer_request_retry(psar, sendline, strlen(sendline), recvline, MAXLINE);
-                if (n < 0) {
-                    err_ret("su_peer_request_retry 2 error");
-                    break;
-                }
+                err_ret("su_peer_request_retry error");
+                break;
             }
-            break;
         }
 
         recvline[n] = 0;	/* null terminate */

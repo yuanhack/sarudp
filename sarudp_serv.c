@@ -15,16 +15,14 @@ pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
 char rejectbuff[1024*10] = {0};
 
-static inline void reliable_ack___save (su_serv_t *psvr,
-        const frames_t *frame, const void *outbuff, int outbytes)
+static inline void reliable_ack___hold (su_serv_t *psvr, const frames_t *frame)
 {
-    cache_t * newack = calloc(1, sizeof(cache_t) + outbytes);
+    cache_t * newack = calloc(1, sizeof(cache_t));
     if (newack == 0)
         return;
     time(&newack->ts);
     memcpy(&newack->frame, frame, sizeof(frames_t));
-    memcpy(newack->frame.data, outbuff, outbytes);
-    newack->frame.len = outbytes;
+    newack->frame.len = -1;
 
     /* Adding associated */
     if (rb_insert(&psvr->rbackcache, &newack->rbn) < 0) {
@@ -33,7 +31,7 @@ static inline void reliable_ack___save (su_serv_t *psvr,
         char ipbuff[INET6_ADDRSTRLEN];
         int port;
         su_get_ip_port_f(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
-        log_msg("serv %x %x time %u key(%s:%d:%u:%u)" ColorRed " +ACK cache %p failed" ColorEnd ,
+        log_msg("serv %x %x time %u key(%s:%d:%u:%u)" ColorRed " !ACK cache %p failed" ColorEnd ,
                 psvr, tid, newack->ts, ipbuff, port,
                 newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, newack);
 #endif
@@ -44,15 +42,81 @@ static inline void reliable_ack___save (su_serv_t *psvr,
         pthread_t tid = pthread_self();
         char ipbuff[INET6_ADDRSTRLEN];
         int port;
-        //inet_ntop(PF_INET6, &p6src->sin6_addr, ipbuff, sizeof(ipbuff));
         su_get_ip_port_f(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
-        log_msg("serv %x %x time %u key(%s:%d:%u:%u)" ColorRed " +ACK cache %p" ColorEnd ,
+        log_msg("serv %x %x time %u key(%s:%d:%u:%u)" ColorRed " !ACK cache %p" ColorEnd ,
                 psvr, tid, newack->ts, ipbuff, port,
                 newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, newack);
 
 #endif
         list_append(&psvr->lsackcache, &newack->frame.node);
     }
+    return;
+}
+static inline void reliable_ack___save (su_serv_t *psvr,
+        const frames_t *frame, const void *outbuff, int outbytes)
+{
+    cache_t * newack;
+
+    /* Construct search key */
+    rb_key_cache_t key;
+    memcpy(&key.destaddr, &frame->srcaddr, sizeof(SAUN));
+    key.destlen = frame->srclen;
+    key.seq = frame->recvhdr.seq;
+    key.sid = frame->recvhdr.sid;
+
+    struct rb_node *cachenode;
+    cache_t *cache;
+
+    /* If is no reply content, only replace len value, don't replace node 
+     * If have a content, must allocating and replacing new node */
+    if (outbuff == 0 && outbytes == 0) {
+        if ((cachenode = rb_search(&psvr->rbackcache, &key))) {
+            cache = rb_entry(cachenode, cache_t, rbn);
+            cache->frame.len = 0;
+#if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE
+            pthread_t tid = pthread_self();
+            char ipbuff[INET6_ADDRSTRLEN];
+            int port;
+            su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+            log_msg("serv %x %x time %u key(%s:%d:%u:%u) "
+                    ColorRed "+ACK cache %p" ColorEnd ,
+                    psvr, tid, cache->ts, ipbuff, port,
+                    cache->frame.recvhdr.sid, cache->frame.recvhdr.seq, cache);
+#endif
+        }
+        return;
+    }
+
+    newack = calloc(1, sizeof(cache_t) + outbytes);
+    if (newack == 0)
+        return;
+
+    /* Construct a new node */
+    time(&newack->ts);
+    memcpy(&newack->frame, frame, sizeof(frames_t));
+    memcpy(newack->frame.data, outbuff, outbytes);
+    newack->frame.len = outbytes;
+
+    /* Find and replace the hold node */
+    if ((cachenode = rb_search(&psvr->rbackcache, &key))) {
+        rb_replace_node(cachenode, &newack->rbn, &psvr->rbackcache);
+        cache = rb_entry(cachenode, cache_t, rbn);
+        list_remove(&cache->frame.node);
+        list_append(&psvr->lsackcache, &newack->frame.node);
+#if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE
+        pthread_t tid = pthread_self();
+        char ipbuff[INET6_ADDRSTRLEN];
+        int port;
+        su_get_ip_port_f(&newack->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+        log_msg("serv %x %x time %u key(%s:%d:%u:%u) "
+                ColorRed "+ACK cache %p Swap %p" ColorEnd ,
+                psvr, tid, newack->ts, ipbuff, port,
+                newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, cache, newack);
+#endif
+        free(cache);
+        return;
+    }
+    free(newack);
     return;
 }
 static inline void reliable_ack_unsave (su_serv_t *psvr)
@@ -164,57 +228,76 @@ static void *thread_request_handle(void *v)
 
         pthread_mutex_lock(&psvr->cachelock);
         reliable_ack_unsave(psvr);
-        if (frame->recvhdr.type == SU_RELIABLE &&
-                (cachenode = rb_search(&psvr->rbackcache, &key))) {
-            cache = rb_entry(cachenode, cache_t, rbn);
+        if (frame->recvhdr.type == SU_RELIABLE) {
+            if ( (cachenode = rb_search(&psvr->rbackcache, &key))) {
+                cache = rb_entry(cachenode, cache_t, rbn);
+
+                if (cache->frame.len == -1) {
+#ifdef SU_DEBUG_RBTREE
+                    char ipbuff[INET6_ADDRSTRLEN];
+                    int port;
+                    su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+                    log_msg("serv %x %x time %u key(%s:%d:%u:%u)"
+                            ColorRed " 0ACK cache %p" ColorEnd,
+                            psvr, tid, cache->ts, ipbuff, port,
+                            cache->frame.recvhdr.sid, cache->frame.recvhdr.seq, cache);
+#endif
+                    pthread_mutex_unlock(&psvr->cachelock);
+                    free(frame);
+                    continue;
+                }
 
 #ifdef SU_DEBUG_RBTREE
-            char ipbuff[INET6_ADDRSTRLEN];
-            int port;
-            su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
-            log_msg("serv %x %x time %u key(%s:%d:%u:%u)" ColorRed " @ACK cache %p" ColorEnd,
-                    psvr, tid, cache->ts, ipbuff, port,
-                    cache->frame.recvhdr.sid, cache->frame.recvhdr.seq, cache);
-#endif
-
-            struct iovec	iovsend[2] = {{0}};
-            struct msghdr	msgsend = {0};	/* assumed init to 0 */
-
-            frame->recvhdr.act = SU_ACK;
-            msgsend.msg_name = (void*)&cache->frame.srcaddr;
-            msgsend.msg_namelen = cache->frame.srclen;
-            msgsend.msg_iov = &iovsend[0];
-            msgsend.msg_iovlen = 2;
-
-            iovsend[0].iov_base = &frame->recvhdr;
-            iovsend[0].iov_len = sizeof(suhdr_t);
-            iovsend[1].iov_base = (void*)cache->frame.data;  /* get the cache results */
-            iovsend[1].iov_len = cache->frame.len;
-
-            /* resend from cache */
-            if (sendmsg(psvr->fd, &msgsend, 0) != sizeof(suhdr_t) + cache->frame.len) {
                 char ipbuff[INET6_ADDRSTRLEN];
                 int port;
                 su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
-                ERR_RET("retransmit sendmsg %s:%d:%u:%u:%u error",
-                        ipbuff, port,
-                        frame->recvhdr.seq, frame->recvhdr.ts,
-                        frame->recvhdr.sid);
-            } 
+                log_msg("serv %x %x time %u key(%s:%d:%u:%u)"
+                        ColorRed " @ACK cache %p" ColorEnd,
+                        psvr, tid, cache->ts, ipbuff, port,
+                        cache->frame.recvhdr.sid, cache->frame.recvhdr.seq, cache);
+#endif
+
+                struct iovec	iovsend[2] = {{0}};
+                struct msghdr	msgsend = {0};	/* assumed init to 0 */
+
+                frame->recvhdr.act = SU_ACK;
+                msgsend.msg_name = (void*)&cache->frame.srcaddr;
+                msgsend.msg_namelen = cache->frame.srclen;
+                msgsend.msg_iov = &iovsend[0];
+                msgsend.msg_iovlen = 2;
+
+                iovsend[0].iov_base = &frame->recvhdr;
+                iovsend[0].iov_len = sizeof(suhdr_t);
+                iovsend[1].iov_base = (void*)cache->frame.data;  /* get the cache results */
+                iovsend[1].iov_len = cache->frame.len;
+
+                /* resend from cache */
+                if (sendmsg(psvr->fd, &msgsend, 0) != sizeof(suhdr_t) + cache->frame.len) {
+                    char ipbuff[INET6_ADDRSTRLEN];
+                    int port;
+                    su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+                    ERR_RET("retransmit sendmsg %s:%d:%u:%u:%u error",
+                            ipbuff, port,
+                            frame->recvhdr.seq, frame->recvhdr.ts,
+                            frame->recvhdr.sid);
+                }
 #ifdef SU_DEBUG_PEER_RESEND
-            else {
-                char ipbuff[INET6_ADDRSTRLEN];
-                int port;
-                su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
-                log_msg("retransmit sendmsg %s:%d:%u:%u:%u",
-                        ipbuff, port,
-                        frame->recvhdr.seq, frame->recvhdr.ts,
-                        frame->recvhdr.sid);
-            }
+                else {
+                    char ipbuff[INET6_ADDRSTRLEN];
+                    int port;
+                    su_get_ip_port_f(&cache->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
+                    log_msg("retransmit sendmsg %s:%d:%u:%u:%u",
+                            ipbuff, port,
+                            frame->recvhdr.seq, frame->recvhdr.ts,
+                            frame->recvhdr.sid);
+                }
 #endif
-            pthread_mutex_unlock(&psvr->cachelock);
-            free(frame);
-            continue;
+                pthread_mutex_unlock(&psvr->cachelock);
+                free(frame);
+                continue;
+            } else {
+                reliable_ack___hold(psvr, frame);
+            }
         }
         pthread_mutex_unlock(&psvr->cachelock);
         request_handle(psvr, frame);
@@ -477,7 +560,6 @@ int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthr
     memcpy(&psvr->servaddr, saddr, servlen);
     psvr->servlen = servlen;
 
-    psvr->sid = 0;
     psvr->seq = 0;
     psvr->rttinit = 0;
     psvr->retry = RTT_MAXNREXMT;
@@ -509,7 +591,12 @@ int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthr
     if (sugem == 0) {
         sugem = Em_open(100, -1, 0, 0, 0);
         Em_run(sugem);
+
+        struct timeval now;
+        gettimeofday(&now, 0);
+        srand(now.tv_sec % 1000 + now.tv_usec);
     }
+    psvr->sid = rand() % 65535;
     pthread_mutex_unlock(&emutex);
 
     memset(&psvr->fe, 0, sizeof(fe_t));
@@ -549,7 +636,6 @@ void su_serv_destroy(su_serv_t *psvr)
         list_remove(&frees->frame.node);
         rb_erase(&frees->rbn, &psvr->rbackcache);
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
-        pthread_t tid = pthread_self();
         char ipbuff[INET6_ADDRSTRLEN];
         int port;
         su_get_ip_port_f(&frees->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);
@@ -672,6 +758,7 @@ static int su_serv_send_recv_act(su_serv_t *psvr, SA *destaddr, socklen_t destle
 
     sendhdr.act  = SU_SYN;
     sendhdr.type = SU_RELIABLE;
+    sendhdr.sid  = psvr->sid;
     sendhdr.seq  = psvr->seq;
     msgsend.msg_name = (void*)destaddr;
     msgsend.msg_namelen = destlen;
@@ -692,7 +779,7 @@ static int su_serv_send_recv_act(su_serv_t *psvr, SA *destaddr, socklen_t destle
 sendagain:
     sendhdr.ts = rtt_ts(&psvr->rttinfo);
     if (sendmsg(psvr->fd, &msgsend, 0) < 0) {
-        ERR_RET("su_serv_send_recv_act sendmsg error");
+        ERR_RET("sendmsg error");
         goto error_ret;
     }
 

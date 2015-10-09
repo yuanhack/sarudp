@@ -161,6 +161,8 @@ void su_get_ip_port(SAUN *s, char *ipbuff, int len, int *port)
             *port = ntohs(s->s6port);
     } else {
         snprintf(ipbuff, len, "su_get_ip_port unknown protocol");
+        if (port)
+            *port = -1;
     }
 }
 void su_get_ip_port_f(SAUN *s, char *ipbuff, int len, int *port)
@@ -175,6 +177,8 @@ void su_get_ip_port_f(SAUN *s, char *ipbuff, int len, int *port)
             *port = ntohs(s->s6port);
     } else {
         snprintf(ipbuff, len, "su_get_ip_port_f unknown protocol");
+        if (port)
+            *port = -1;
     }
 }
 void su_get_ip(SAUN *s, char *ipbuff, int len)

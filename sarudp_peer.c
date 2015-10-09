@@ -176,7 +176,6 @@ static void *thread_request_handle(void *v)
             cache = rb_entry(cachenode, cache_t, rbn);
 
 #ifdef SU_DEBUG_RBTREE
-            pthread_t tid = pthread_self();
             char ipbuff[INET6_ADDRSTRLEN];
             int port;
 #ifdef SU_DEBUG_IP6FULL
@@ -184,8 +183,8 @@ static void *thread_request_handle(void *v)
 #else
             su_get_ip_port(&frame->srcaddr, ipbuff, sizeof(ipbuff), &port);
 #endif
-            log_msg("peer %x %x time %u key(%s:%d:%u:%u)" ColorRed " @ACK cache %p" ColorEnd,
-                    psar,tid,cache->ts, ipbuff, port,
+            log_msg("peer %x time %u key(%s:%d:%u:%u)" ColorRed " @ACK cache %p" ColorEnd,
+                    psar,cache->ts, ipbuff, port,
                     cache->frame.recvhdr.sid,
                     cache->frame.recvhdr.seq,
                     cache);
@@ -284,14 +283,14 @@ static int su_peer_thread_uninstall(su_peer_t *psar)
 }
 
 void su_peer_reliable_request_handle_install(su_peer_t *psar,
-        cb_supeer_recv_t* reliable_request_handle)
+        cb_su_peer_receiver_t* reliable_request_handle)
 {
     pthread_mutex_lock(&psar->lock);
     psar->reliable_request_handle = reliable_request_handle;
     pthread_mutex_unlock(&psar->lock);
 }
 void su_peer_ordinary_request_handle_install(su_peer_t *psar,
-        cb_supeer_recv_t* ordinary_request_handle)
+        cb_su_peer_receiver_t* ordinary_request_handle)
 {
     pthread_mutex_lock(&psar->lock);
     psar->ordinary_request_handle = ordinary_request_handle;
@@ -341,17 +340,16 @@ recvagain:
 #endif
                 break;
             default:
-                log_msg("serv %x reject unknown protocol raw bytes %d", psar, ret);
+                log_msg("peer %x reject unknown protocol raw bytes %d", psar, ret);
                 free(frame);
                 goto recvagain;
         };
-        ERR_RET("peer 0x%x %d recv %s:%d bytes %d, but reject datas", psar,
-                fe->fd, ipbuff, port, ret);
+        ERR_RET("peer %x recv %s:%d bytes %d, but reject datas",
+                psar, ipbuff, port, ret);
 #endif
         return;
     }
 
-    //frame->srclen       = sizeof(SA4);
     frame->srclen       = psar->destlen;
 
     msgrecv.msg_name    = & frame->srcaddr;
@@ -403,7 +401,7 @@ recvagain:
 #endif
             break;
         default:
-            log_msg("serv %x reject unknown protocol type %d raw bytes %d",
+            log_msg("peer %x reject unknown protocol type %d raw bytes %d",
                     psar, frame->srcaddr.sfamily, ret);
             free(frame);
             goto recvagain;
@@ -412,11 +410,6 @@ recvagain:
     SAUN *psrc, *pdst;
     psrc = &frame->srcaddr; // foreign host
     pdst = &psar->destaddr; // localhost
-
-//    showaddr6_8_16(&pdst->addr6);
-//    showaddr6_8_16(&psrc->addr6);
-//    showaddr6_16_8(&psrc->addr6);
-//    showaddr6_32_4(&psrc->addr6);
 
 #ifndef promiscuous_mode
     /*  Filter: Check address and port
@@ -575,7 +568,6 @@ int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t
         sugem = Em_open(100, -1, 0, 0, 0);
         Em_run(sugem);
 
-        /* Make noise */
         struct timeval now;
         gettimeofday(&now, 0);
         srand(now.tv_sec % 1000 + now.tv_usec);
@@ -625,7 +617,6 @@ void su_peer_destroy(su_peer_t *psar)
         list_remove(&frees->frame.node);
         rb_erase(&frees->rbn, &psar->rbackcache);
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
-        pthread_t tid = pthread_self();
         char ipbuff[INET6_ADDRSTRLEN];
         int port;
         su_get_ip_port_f(&frees->frame.srcaddr, ipbuff, sizeof(ipbuff), &port);

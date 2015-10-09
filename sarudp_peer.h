@@ -4,7 +4,7 @@
 #include "sarudp_comm.h"
 
 typedef struct sar_udp_peer su_peer_t;
-typedef void cb_supeer_recv_t(su_peer_t *ps, char* buff, int len);
+typedef void cb_su_peer_receiver_t(su_peer_t *ps, char* buff, int len);
 
 /* SYN/ACK/Retransfer UDP peer manager */
 struct sar_udp_peer {
@@ -21,8 +21,8 @@ struct sar_udp_peer {
 
     /* event driver */
     fe_t fe;
-    cb_supeer_recv_t * reliable_request_handle;
-    cb_supeer_recv_t * ordinary_request_handle;
+    cb_su_peer_receiver_t * reliable_request_handle;
+    cb_su_peer_receiver_t * ordinary_request_handle;
 
     pthread_t tid;
     int       run;
@@ -58,8 +58,8 @@ int  su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes, v
 int  su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes);
 int  su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr);
 
-void su_peer_reliable_request_handle_install(su_peer_t *psar, cb_supeer_recv_t* reliable_request_handle);
-void su_peer_ordinary_request_handle_install(su_peer_t *psar, cb_supeer_recv_t* ordinary_request_handle);
+void su_peer_reliable_request_handle_install(su_peer_t *psar, cb_su_peer_receiver_t* reliable_request_handle);
+void su_peer_ordinary_request_handle_install(su_peer_t *psar, cb_su_peer_receiver_t* ordinary_request_handle);
 void su_peer_reliable_request_handle_uninstall(su_peer_t *psar);
 void su_peer_ordinary_request_handle_uninstall(su_peer_t *psar);
 

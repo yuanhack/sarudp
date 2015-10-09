@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     if (su_peer_create(&sar, (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_quit("su_peer_create error");
 #else
-    if (su_peer_create_bind(&sar, argc == 1 ? 10000 : atoi(argv[1]), 
+    if (su_peer_create_bind(&sar, argc == 1 ? 10000 : atoi(argv[1]),
                 (SA*)&servaddr, sizeof(servaddr)) < 0)
         err_sys("su_peer_create_bind error");
     log_msg("listen port %s successful", argc == 1 ? "10000" : argv[1]);
@@ -85,11 +85,9 @@ void udpin_reliable(su_peer_t *psar, char *buff, int len)
     su_get_ip_port_f(&s, ip, sizeof(ip), &port); // fulll ip address 
 
     printf("reliable recv from %s:%d datagram len %d\n", ip, port, len);
-
-    //c+=10; // sarudp header len;
-
-    printf("reliable recv len %d datagrams " ColorGre "%s" ColorEnd 
-            " count = %llu\n"ColorEnd, len, buff, c+=len);
+    printf("reliable recv len %d datagrams "
+            ColorGre "%s" ColorEnd " count = %llu\n",
+            len, buff, c+=len);
 #if 1
     // reply successful and response data
     if (su_peer_reply(psar, buff, len) < 0) {
@@ -115,20 +113,16 @@ void udpin_ordinary(su_peer_t *psar, char *buff, int len)
     su_get_ip_port_f(&s, ip, sizeof(ip), &port); // fulll ip address 
 
     printf("ordinary recv from %s:%d datagrams len %d\n", ip, port, len);
+    printf("ordinary recv len %d datagrams "
+            ColorYel "%s" ColorEnd " count = %llu\n",
+            len, buff, c+=len);
 
-    printf("ordinary recv len %d datagrams " ColorYel "%s" ColorEnd 
-            " count = %llu\n"ColorEnd, len, buff, c+=len);
-#if 1
-    // reply successful and response data
-    if (su_peer_reply(psar, buff, len) < 0) {
-        ERR_RET("su_peer_reply error");
+    //su_peer_reply(psar, buff, len); // call is invalid, ordinary packet don't handle reply
+    
+    // response data (echo)
+    if (su_peer_send(psar, buff, len) != len) { // call is valid
+        err_ret("su_peer_send error");
     }
-#else
-    // reply successful but Do not carry data
-    if (su_peer_reply(psar, 0, 0) < 0) {
-        ERR_RET("su_peer_reply error");
-    }
-#endif
 }
 
 void sigint(int no)
