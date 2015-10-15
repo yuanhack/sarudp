@@ -70,8 +70,8 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-	cli_su_peer_request(stdin, &sar);
-    //cli_su_peer_request_random(&sar);
+	//cli_su_peer_request(stdin, &sar);
+    cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
 	cli_su_peer_send(stdin, &sar);
@@ -146,15 +146,16 @@ void cli_su_peer_request(FILE *fp, su_peer_t *psar)
 
 void cli_su_peer_request_random(su_peer_t *psar)
 {
-	ssize_t	n;
+	ssize_t	n, m;
 	char	sendline[MAXLINE], recvline[MAXLINE + 1] = {0};
 
     srand(time(0));
 
     do {
         n = snprintf(sendline, sizeof(sendline), "%05d", rand()%10000);
+        m = n;
         log_msg("send request  %d[%s]", n, sendline);
-        n = su_peer_request(psar, sendline, strlen(sendline), recvline, MAXLINE);
+        n = su_peer_request(psar, sendline, n, recvline, MAXLINE);
         if (n < 0) {
             err_ret("su_peer_request error");
             n = su_peer_request_retry(psar, sendline, strlen(sendline), recvline, MAXLINE);
@@ -166,6 +167,11 @@ void cli_su_peer_request_random(su_peer_t *psar)
 
         recvline[n] = 0;	/* null terminate */
         log_msg("recv response %d[\e[32m%s\e[m]", n, recvline);
+
+        if (memcmp(sendline, recvline, m) != 0) {
+            err_quit("checkout data failure");
+        }
+        log_msg("checkout data pass");
 
         usleep(10 * 1000);     // microsecond
     } while (1);
