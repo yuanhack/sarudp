@@ -415,7 +415,7 @@ recvagain:
             return;
         }
 #ifdef SU_DEBUG_PEER_RECV
-        switch (frame->srcaddr.sfamily) {
+        switch (saddr.sfamily) {
             case PF_INET:
             case PF_INET6:
 #ifdef SU_DEBUG_IP6FULL
@@ -426,7 +426,6 @@ recvagain:
                 break;
             default:
                 log_msg("serv %x reject unknown protocol raw bytes %d", psvr, ret);
-                free(frame);
                 goto recvagain;
         };
         ERR_RET("serv %x %d recv %s:%d bytes %d, but reject datas", psvr,
