@@ -82,8 +82,15 @@ void reliable_data_in(su_serv_t *psar, frames_t *frame, char *buff, int len)
     log_msg("reliable recv from %s:%d datagrams len %d " ColorGre"%s"ColorEnd,
             ipbuff, port, len, buff);
 
-    su_serv_reply(psar, frame, buff, len);
-    //su_serv_reply(psar, frame, 0, 0);
+    int n;
+#if 1
+    n = su_serv_reply(psar, frame, buff, len);
+#else
+    n = su_serv_reply_ack(psar, frame);
+#endif
+    if (n < 0) {
+        ERR_RET("su_peer_reply error");
+    }
 }
 void ordinary_data_in(su_serv_t *psar, frames_t *frame, char *buff, int len)
 {

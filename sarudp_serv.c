@@ -15,11 +15,14 @@ pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
 char rejectbuff[1024*10] = {0};
 
-static inline void reliable_ack___hold (su_serv_t *psvr, const frames_t *frame)
+static inline int reliable_ack___hold(su_serv_t *psvr, const frames_t *frame)
 {
-    cache_t * newack = calloc(1, sizeof(cache_t));
-    if (newack == 0)
-        return;
+    cache_t * newack;
+    newack = calloc(1, sizeof(cache_t));
+    if (newack == 0) {
+        errno = ENOBUFS;
+        return -1;
+    }
     time(&newack->ts);
     memcpy(&newack->frame, frame, sizeof(frames_t));
     newack->frame.len = -1;
@@ -36,7 +39,8 @@ static inline void reliable_ack___hold (su_serv_t *psvr, const frames_t *frame)
                 newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, newack);
 #endif
         free(newack);
-        return;
+        errno = EALREADY;
+        return -1;
     } else {
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE 
         pthread_t tid = pthread_self();
@@ -50,13 +54,11 @@ static inline void reliable_ack___hold (su_serv_t *psvr, const frames_t *frame)
 #endif
         list_append(&psvr->lsackcache, &newack->frame.node);
     }
-    return;
+    return 0;
 }
-static inline void reliable_ack___save (su_serv_t *psvr,
+static inline int reliable_ack___save (su_serv_t *psvr,
         const frames_t *frame, const void *outbuff, int outbytes)
 {
-    cache_t * newack;
-
     /* Construct search key */
     rb_key_cache_t key;
     memcpy(&key.destaddr, &frame->srcaddr, sizeof(SAUN));
@@ -83,16 +85,20 @@ static inline void reliable_ack___save (su_serv_t *psvr,
                     psvr, tid, cache->ts, ipbuff, port,
                     cache->frame.recvhdr.sid, cache->frame.recvhdr.seq, cache);
 #endif
+            return 0;
         }
-        return;
+        errno = ENOKEY;
+        return -1;
     }
 
+    cache_t * newack;
     newack = calloc(1, sizeof(cache_t) + outbytes);
-    if (newack == 0)
-        return;
+    if (newack == 0) {
+        errno = ENOBUFS;
+        return -1;
+    }
 
     /* Construct a new node */
-    time(&newack->ts);
     memcpy(&newack->frame, frame, sizeof(frames_t));
     memcpy(newack->frame.data, outbuff, outbytes);
     newack->frame.len = outbytes;
@@ -101,6 +107,7 @@ static inline void reliable_ack___save (su_serv_t *psvr,
     if ((cachenode = rb_search(&psvr->rbackcache, &key))) {
         rb_replace_node(cachenode, &newack->rbn, &psvr->rbackcache);
         cache = rb_entry(cachenode, cache_t, rbn);
+        newack->ts = cache->ts;
         list_remove(&cache->frame.node);
         list_append(&psvr->lsackcache, &newack->frame.node);
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE
@@ -111,13 +118,14 @@ static inline void reliable_ack___save (su_serv_t *psvr,
         log_msg("serv %x %x time %u key(%s:%d:%u:%u) "
                 ColorRed "+ACK cache %p Swap %p" ColorEnd ,
                 psvr, tid, newack->ts, ipbuff, port,
-                newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, cache, newack);
+                frame->recvhdr.sid, frame->recvhdr.seq, cache, newack);
 #endif
         free(cache);
-        return;
+        return 0;
     }
     free(newack);
-    return;
+    errno = ENOKEY;
+    return -1;
 }
 static inline void reliable_ack_unsave (su_serv_t *psvr)
 {
@@ -296,7 +304,12 @@ static void *thread_request_handle(void *v)
                 free(frame);
                 continue;
             } else {
-                reliable_ack___hold(psvr, frame);
+                if (reliable_ack___hold(psvr, frame) < 0) {
+                    err_ret("reliable_ack___hold error");
+                    pthread_mutex_unlock(&psvr->cachelock);
+                    free(frame);
+                    continue;
+                }
             }
         }
         pthread_mutex_unlock(&psvr->cachelock);
@@ -408,7 +421,8 @@ recvagain:
     socklen = sizeof(SA6);
     frame = calloc(1, sizeof(frames_t) + REALDATAMAX);
     if (frame == 0) {
-        log_msg("serv %x ENOMEM", psvr);
+        errno = ENOBUFS; // ENOMEM
+        err_ret("serv %x ENOBUFS", psvr);
         /* reject datagram */
         ret = recvfrom(fe->fd, rejectbuff, sizeof(rejectbuff), 0, (SA*)&saddr, &socklen);
         if (ret < 0 && errno == EAGAIN) {
@@ -472,7 +486,7 @@ recvagain:
     if (ret < sizeof(suhdr_t)) {
 #ifdef SU_DEBUG_PEER_RECV
         errno = EBADMSG;
-        err_ret("serv %x recv %s:%d raw bytes %d less than the protocol header %d",
+        err_ret("serv %x recv %s:%d raw bytes %d less-then head %d bytes",
                 psvr, ipbuff, port, ret, sizeof(suhdr_t));
 #endif
         free(frame);
@@ -520,8 +534,8 @@ recvagain:
     } else {
         pthread_mutex_unlock(&psvr->lock);
 #ifdef SU_DEBUG_PEER_RECV
-        errno = EBADMSG;
-        err_ret("serv %x recv %s:%d raw bytes %d protocol format error", psvr,
+        errno = EPROTO;
+        err_ret("serv %x recv %s:%d raw bytes %d", psvr,
                 ipbuff, port, ret);
 #endif
         free(frame);
@@ -667,16 +681,20 @@ static int su_serv_reply_act(su_serv_t *psvr, const frames_t *frame,
     iovsend[1].iov_base = (void*)outbuff;
     iovsend[1].iov_len = outbytes;
 
+    if (answerhdr.type == SU_RELIABLE) {
+        pthread_mutex_lock(&psvr->cachelock);
+        if (reliable_ack___save(psvr, frame, outbuff, outbytes) < 0) {
+            pthread_mutex_unlock(&psvr->cachelock);
+            err_ret("reliable_ack___save error");
+            return -1;
+        }
+        pthread_mutex_unlock(&psvr->cachelock);
+    }
+
     n = sendmsg(psvr->fd, &msgsend, 0);
     if (n != sizeof(suhdr_t) + outbytes) {
         err_ret("sendmsg error");
         return(-1);
-    }
-
-    if (answerhdr.type == SU_RELIABLE) {
-        pthread_mutex_lock(&psvr->cachelock);
-        reliable_ack___save(psvr, frame, outbuff, outbytes);
-        pthread_mutex_unlock(&psvr->cachelock);
     }
 
     return(outbytes);
@@ -894,15 +912,10 @@ error_ret:
     pthread_mutex_unlock(&psvr->lock);
     return(-1);
 }
-int su_serv_getsrcaddr_act(su_serv_t *psvr, frames_t *frame, SA *addr, socklen_t *addrlen)
-{
-    memcpy(addr, &frame->srcaddr, frame->srclen);
-    *addrlen = frame->srclen;
-    return 0;
-}
 
 int su_serv_reply(su_serv_t *psvr, frames_t *frame, const void *outbuff, int outbytes)
 {
+    if (psvr == 0 || frame == 0) { errno = EINVAL; return -1; }
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (    (outbytes <  0) ||
             (outbytes == 0 &&  outbuff) ||
@@ -910,15 +923,15 @@ int su_serv_reply(su_serv_t *psvr, frames_t *frame, const void *outbuff, int out
     { errno = EINVAL; return -1; }
     return su_serv_reply_act(psvr, frame, outbuff, outbytes);
 }
-
-int su_serv_getsrcaddr(su_serv_t *psvr, frames_t *frame, SA *addr, socklen_t *addrlen)
+int su_serv_reply_ack(su_serv_t *psvr, frames_t *frame)
 {
-    if (addr == 0 || addrlen == 0) { errno = EINVAL; return -1;}
-    return su_serv_getsrcaddr_act(psvr, frame, addr, addrlen);
+    if (psvr == 0 || frame == 0) { errno = EINVAL; return -1; }
+    return su_serv_reply_act(psvr, frame, 0, 0);
 }
 
 int su_serv_send(su_serv_t *psvr, SA* destaddr, socklen_t destlen, const void *outbuff, int outbytes)
 {
+    if (psvr == 0) { errno = EINVAL; return -1; }
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     return su_serv_send_act(psvr, destaddr, destlen, outbuff, outbytes);
@@ -927,6 +940,7 @@ int su_serv_send(su_serv_t *psvr, SA* destaddr, socklen_t destlen, const void *o
 int su_serv_request(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes)
 {
+    if (psvr == 0) { errno = EINVAL; return -1; }
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
@@ -936,6 +950,7 @@ int su_serv_request(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
 int su_serv_request_retry(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes)
 {
+    if (psvr == 0) { errno = EINVAL; return -1; }
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}

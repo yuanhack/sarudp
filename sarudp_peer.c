@@ -15,12 +15,15 @@ pthread_mutex_t emutex = PTHREAD_MUTEX_INITIALIZER;
 em_t * sugem = 0;
 char rejectbuff[1024*10] = {0};
 
-static inline void reliable_ack___save(su_peer_t *psar,
+static inline int reliable_ack___save(su_peer_t *psar,
         const void *outbuff, int outbytes)
 {
-    cache_t * newack = calloc(1, sizeof(cache_t) + outbytes);
-    if (newack == 0)
-        return;
+    cache_t * newack;
+    newack = calloc(1, sizeof(cache_t) + outbytes);
+    if (newack == 0) {
+        errno = ENOBUFS;
+        return -1;
+    }
     time(&newack->ts);
     memcpy(&newack->frame, psar->nowsynframe, sizeof(frames_t));
     memcpy(newack->frame.data, outbuff, outbytes);
@@ -41,7 +44,8 @@ static inline void reliable_ack___save(su_peer_t *psar,
                 newack->frame.recvhdr.sid, newack->frame.recvhdr.seq, newack);
 #endif
         free(newack);
-        return;
+        errno = EALREADY;
+        return -1;
     } else {
 #if defined SU_DEBUG_LIST || defined SU_DEBUG_RBTREE
         char ipbuff[INET6_ADDRSTRLEN];
@@ -57,7 +61,7 @@ static inline void reliable_ack___save(su_peer_t *psar,
 #endif
         list_append(&psar->lsackcache, &newack->frame.node);
     }
-    return;
+    return 0;
 }
 static inline void reliable_ack_unsave (su_peer_t *psar)
 {
@@ -323,7 +327,8 @@ recvagain:
     socklen = psar->destlen;
     frame = calloc(1, sizeof(frames_t) + REALDATAMAX);
     if (frame == 0) {
-        log_msg("peer %x ENOMEM", psar);
+        errno = ENOBUFS; // ENOMEM
+        log_msg("peer %x ENOBUFS", psar);
         /* reject datagram */
         ret = recvfrom(fe->fd, rejectbuff, sizeof(rejectbuff), 0, (SA*)&saddr, &socklen);
         if (ret < 0 && errno == EAGAIN) {
@@ -873,12 +878,18 @@ static int su_peer_reply_act(su_peer_t *psar,
     iovsend[1].iov_base = (void*)outbuff;
     iovsend[1].iov_len = outbytes;
 
-    n = sendmsg(psar->fd, &msgsend, 0);
-    if (n != sizeof(suhdr_t) + outbytes)
-        return(-1);
+    if (answerhdr.type == SU_RELIABLE) {
+        if (reliable_ack___save(psar, outbuff, outbytes) < 0) {
+            err_ret("reliable_ack___save error");
+            return -1;
+        }
+    }
 
-    if (answerhdr.type == SU_RELIABLE)
-        reliable_ack___save(psar, outbuff, outbytes);
+    n = sendmsg(psar->fd, &msgsend, 0);
+    if (n != sizeof(suhdr_t) + outbytes) {
+        err_ret("sendmsg error");
+        return(-1);
+    }
 
     return(outbytes);
 }
@@ -894,6 +905,7 @@ int su_peer_getsrcaddr_act(su_peer_t *psar, SAUN *addr)
 
 int su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes)
 {
+    if (psar == 0) { errno = EINVAL; return -1;}
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (    (outbytes <  0) ||
             (outbytes == 0 &&  outbuff) ||
@@ -901,9 +913,15 @@ int su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes)
     { errno = EINVAL; return -1; }
     return su_peer_reply_act(psar, outbuff, outbytes);
 }
+int su_peer_reply_ack(su_peer_t *psar)
+{
+    if (psar == 0) { errno = EINVAL; return -1;}
+    return su_peer_reply_act(psar, 0, 0);
+}
 
 int su_peer_send(su_peer_t *psar, const void *outbuff, int outbytes)
 {
+    if (psar == 0) { errno = EINVAL; return -1;}
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     return su_peer_send_act(psar, outbuff, outbytes);
@@ -912,6 +930,7 @@ int su_peer_send(su_peer_t *psar, const void *outbuff, int outbytes)
 int su_peer_request(su_peer_t *psar, const void *outbuff, int outbytes,
         void *inbuff, int inbytes)
 {
+    if (psar == 0) { errno = EINVAL; return -1;}
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
@@ -921,6 +940,7 @@ int su_peer_request(su_peer_t *psar, const void *outbuff, int outbytes,
 int su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes,
         void *inbuff, int inbytes)
 {
+    if (psar == 0) { errno = EINVAL; return -1;}
     if (outbytes > REALDATAMAX) { errno = EMSGSIZE; return -1; }
     if (outbytes <= 0 || outbuff == 0) { errno = EINVAL; return -1;}
     if (inbytes  <= 0 || inbuff== 0) { errno = EINVAL; return -1;}
@@ -928,6 +948,7 @@ int su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes,
 }
 int su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr)
 {
+    if (psar == 0) { errno = EINVAL; return -1;}
     if (addr == 0) { errno = EINVAL; return -1;}
     return su_peer_getsrcaddr_act(psar, addr);
 }

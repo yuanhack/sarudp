@@ -55,13 +55,11 @@ void su_serv_ordinary_request_handle_install(su_serv_t *psvr, cb_su_serv_receive
 void su_serv_reliable_request_handle_uninstall(su_serv_t *psvr);
 void su_serv_ordinary_request_handle_uninstall(su_serv_t *psvr);
 
-int su_serv_getsrcaddr_act(su_serv_t *psvr, frames_t *frame, SA *addr, socklen_t *addrlen);
-int su_serv_reply(su_serv_t *psvr, frames_t *frame, const void *outbuff, int outbytes);
-int su_serv_getsrcaddr(su_serv_t *psvr, frames_t *frame, SA *addr, socklen_t *addrlen);
-
 int su_serv_send(su_serv_t *psar, SA*destaddr, socklen_t destlen, const void *outbuff, int outbytes);
 int su_serv_request(su_serv_t *psar, SA *destaddr, socklen_t destlen, const void *outbuff, int outbytes, void *inbuff, int inbytes);
 int su_serv_request_retry(su_serv_t *psar, SA *destaddr, socklen_t destlen, const void *outbuff, int outbytes, void *inbuff, int inbytes);
 
+int su_serv_reply(su_serv_t *psvr, frames_t *frame, const void *outbuff, int outbytes);
+int su_serv_reply_ack(su_serv_t *psvr, frames_t *frame);
 
 #endif /* __YH_SARUDP_SERV_H__ */

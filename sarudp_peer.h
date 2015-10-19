@@ -51,17 +51,18 @@ int  su_peer_create(su_peer_t *psar, const SA *ptoaddr, socklen_t servlen);
 int  su_peer_create_bind(su_peer_t *psar, int port, const SA *ptoaddr, socklen_t servlen);
 void su_peer_destroy(su_peer_t *psar);
 
-int  su_peer_send(su_peer_t *psar, const void *outbuff, int outbytes);
-int  su_peer_request(su_peer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
-int  su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
-
-int  su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes);
-int  su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr);
-
 void su_peer_reliable_request_handle_install(su_peer_t *psar, cb_su_peer_receiver_t* reliable_request_handle);
 void su_peer_ordinary_request_handle_install(su_peer_t *psar, cb_su_peer_receiver_t* ordinary_request_handle);
 void su_peer_reliable_request_handle_uninstall(su_peer_t *psar);
 void su_peer_ordinary_request_handle_uninstall(su_peer_t *psar);
 
+int  su_peer_send(su_peer_t *psar, const void *outbuff, int outbytes);
+int  su_peer_request(su_peer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
+int  su_peer_request_retry(su_peer_t *psar, const void *outbuff, int outbytes, void *inbuff, int inbytes);
+
+int  su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr);
+
+int  su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes);
+int  su_peer_reply_ack(su_peer_t *psar);
 
 #endif /* __YH_SARUDP_PEER_H__ */

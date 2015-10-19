@@ -88,17 +88,16 @@ void udpin_reliable(su_peer_t *psar, char *buff, int len)
     printf("reliable recv len %d datagrams "
             ColorGre "%s" ColorEnd " count = %llu\n",
             len, buff, c+=len);
+
+    int n;
 #if 1
-    // reply successful and response data
-    if (su_peer_reply(psar, buff, len) < 0) {
-        ERR_RET("su_peer_reply error");
-    }
+    n = su_peer_reply(psar, buff, len);
 #else
-    // reply successful but Do not carry data
-    if (su_peer_reply(psar, 0, 0) < 0) {
+    n = su_peer_reply_ack(psar);
+#endif
+    if (n < 0) {
         ERR_RET("su_peer_reply error");
     }
-#endif
 }
 void udpin_ordinary(su_peer_t *psar, char *buff, int len)
 {
