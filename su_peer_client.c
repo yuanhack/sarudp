@@ -31,26 +31,26 @@ int main(int argc, char **argv)
         err_quit("Destination parse failed %s", errinfo);
     log_msg("Destination %s", ip);
 
-	if (argc != 2 && argc != 3)
-		err_quit("usage: udpcli <Destination> [Port Default 7]");
+    if (argc != 2 && argc != 3)
+        err_quit("usage: udpcli <Destination> [Port Default 7]");
 
 #if 0
-	struct sockaddr_in servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-	servaddr.sin_family = PF_INET;
+    struct sockaddr_in servaddr;
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = PF_INET;
     servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
-	Inet_pton(AF_INET, ip, &servaddr.sin_addr);
+    Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 #else
-	struct sockaddr_in6 servaddr;
+    struct sockaddr_in6 servaddr;
     char ip6[INET6_ADDRSTRLEN];
-	bzero(&servaddr, sizeof(servaddr));
-	servaddr.sin6_family = PF_INET6;
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin6_family = PF_INET6;
     servaddr.sin6_port = htons(argc == 2 ? 7 : atoi(argv[2]));
 
     // IPv4 to IPv6
     snprintf(ip6, sizeof(ip6),"::ffff:%s", ip);
     log_msg("Target IPv6 %s", ip6);
-	Inet_pton(AF_INET6, ip6, &servaddr.sin6_addr.s6_addr);
+    Inet_pton(AF_INET6, ip6, &servaddr.sin6_addr.s6_addr);
 #endif
 
 #if 1
@@ -70,11 +70,11 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-	//cli_su_peer_request(stdin, &sar);
+    //cli_su_peer_request(stdin, &sar);
     cli_su_peer_request_random(&sar);
 #else
     // send ordinary data to target
-	cli_su_peer_send(stdin, &sar);
+    cli_su_peer_send(stdin, &sar);
 #endif
 
     return 0;
@@ -120,8 +120,8 @@ void sigint(int no)
 
 void cli_su_peer_request(FILE *fp, su_peer_t *psar)
 {
-	ssize_t	n, ret;
-	char sendline[MAXLINE], recvline[MAXLINE + 1];
+    ssize_t	n, ret;
+    char sendline[MAXLINE], recvline[MAXLINE + 1];
     char outline[MAXLINE + 128];
 
     do {
@@ -146,8 +146,8 @@ void cli_su_peer_request(FILE *fp, su_peer_t *psar)
 
 void cli_su_peer_request_random(su_peer_t *psar)
 {
-	ssize_t	n, m;
-	char	sendline[MAXLINE], recvline[MAXLINE + 1] = {0};
+    ssize_t	n, m;
+    char	sendline[MAXLINE], recvline[MAXLINE + 1] = {0};
 
     srand(time(0));
 
@@ -179,8 +179,8 @@ void cli_su_peer_request_random(su_peer_t *psar)
 
 void cli_su_peer_send(FILE *fp, su_peer_t *psar)
 {
-	ssize_t	n;
-	char	sendline[MAXLINE];
+    ssize_t	n;
+    char	sendline[MAXLINE];
 
     do {
         if (Fgets(sendline, MAXLINE, fp) == NULL) {

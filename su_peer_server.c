@@ -29,23 +29,23 @@ int main(int argc, char **argv)
 
     signal(SIGINT, sigint);
 
-	if (argc != 1 && argc != 2)
-		err_quit("usage: %s [Port Default 10000]", argv[0]);
+    if (argc != 1 && argc != 2)
+        err_quit("usage: %s [Port Default 10000]", argv[0]);
 
 #if 0
     /* The address is not used as a client, can be arbitrarily set  */
-	struct sockaddr_in servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-	servaddr.sin_family = AF_INET;
+    struct sockaddr_in servaddr;
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(65535);
-	Inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
+    Inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
 #else
-	struct sockaddr_in6 servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-	servaddr.sin6_family = AF_INET6;
+    struct sockaddr_in6 servaddr;
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin6_family = AF_INET6;
     servaddr.sin6_port = htons(65535);
-	//Inet_pton(AF_INET6, "::ffff:127.0.0.1", &servaddr.sin6_addr); // for test localhost IPv6
-	Inet_pton(AF_INET6, "::1", &servaddr.sin6_addr); // for test localhost IPv6
+    //Inet_pton(AF_INET6, "::ffff:127.0.0.1", &servaddr.sin6_addr); // for test localhost IPv6
+    Inet_pton(AF_INET6, "::1", &servaddr.sin6_addr); // for test localhost IPv6
 #endif
 
 #if 0
@@ -117,7 +117,7 @@ void udpin_ordinary(su_peer_t *psar, char *buff, int len)
             len, buff, c+=len);
 
     //su_peer_reply(psar, buff, len); // call is invalid, ordinary packet don't handle reply
-    
+
     // response data (echo)
     if (su_peer_send(psar, buff, len) != len) { // call is valid
         err_ret("su_peer_send error");

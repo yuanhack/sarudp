@@ -33,17 +33,17 @@ int main(int argc, char **argv)
         daemon_init(0, 0, 0, 0);
 
 #if 0
-	struct sockaddr_in servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-	servaddr.sin_family = AF_INET;
+    struct sockaddr_in servaddr;
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(port);
-	Inet_pton(AF_INET, "0.0.0.0", &servaddr.sin_addr);
+    Inet_pton(AF_INET, "0.0.0.0", &servaddr.sin_addr);
 #else
-	struct sockaddr_in6 servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-	servaddr.sin6_family = AF_INET6;
+    struct sockaddr_in6 servaddr;
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin6_family = AF_INET6;
     servaddr.sin6_port = htons(port);
-	Inet_pton(AF_INET6, "::", &servaddr.sin6_addr);
+    Inet_pton(AF_INET6, "::", &servaddr.sin6_addr);
 #endif
 
     if (su_serv_create(&svr, (SA*)&servaddr, sizeof(servaddr), 10) < 0)
