@@ -478,8 +478,8 @@ recvagain:
     } else {
         pthread_mutex_unlock(&psar->lock);
 #ifdef SU_DEBUG_PEER_RECV
-        errno = EBADMSG;
-        err_ret("peer %x recv %s:%d raw bytes %d protocol format error", psar, ipbuff, port, ret);
+        errno = EPROTO;
+        err_ret("peer %x recv %s:%d raw bytes %d", psar, ipbuff, port, ret);
 #endif
         free(frame);
         return;
