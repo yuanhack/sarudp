@@ -136,7 +136,7 @@ void cli_su_peer_request(FILE *fp, su_peer_t *psar)
         else if (ret > 0) {
             /* Foreign Host Receive successful and have a response */
             recvline[ret] = 0;	/* null terminate */
-            n = snprintf(outline, sizeof(outline), "Response: \e[32m%s\e[m", recvline); 
+            n = snprintf(outline, sizeof(outline), "\e[32m%s\e[m", recvline);
             write(2, outline, n);
         } else {
             fprintf(stdout, "Foreign Host Receive successful\n"); 

@@ -130,7 +130,7 @@ void Setsock_rcvtimeo(int fd, int second, int microsecond)
 }
 /* create epoll manager */
 em_t* em_open(int maxfds, int timeout, 
-        em_cb_t before, em_cb_t events, em_cb_t after)
+        em_cb_t before, em_cbn_t events, em_cb_t after)
 {
     em_t *em = 0; 
     if (maxfds <= 0) { errno = EINVAL; return 0; }
@@ -152,7 +152,7 @@ err_out:
     return 0;
 }
 em_t* Em_open(int maxfds, int timeout, em_cb_t before, 
-        em_cb_t events, em_cb_t after)
+        em_cbn_t events, em_cb_t after)
 {
     em_t *em;
     if ((em = em_open(maxfds, timeout, before, events, after)) == 0) 
@@ -162,32 +162,55 @@ em_t* Em_open(int maxfds, int timeout, em_cb_t before,
 static void * em_thread(void *p)
 {
     em_t *em = (em_t*)p;
-    int n;
-    void            *ptr;
+    int n, nfds;
+    void *ptr;
     fe_t *fe = 0;
-    pthread_detach(em->tid);
+
     while (em->run) {
         if (em->before) em->before(em);
-        em->nfds = epoll_wait(em->epfd, em->evlist, em->maxfds, em->timeout);
-        if (em->event) em->event(em);
-        for (n = 0; n < em->nfds; ++n) {
+
+        nfds = epoll_wait(em->epfd, em->evlist, em->maxfds, em->timeout);
+        if (em->event) em->event(em, nfds);
+
+        for (n = 0; n < nfds; ++n) {
             ptr = em->evlist[n].data.ptr;
             if (ptr == 0) continue;
             fe = (fe_t*)ptr;
-            if(em->evlist[n].events & EPOLLIN ) if(fe->in ) { fe->in (fe); }
-            if(em->evlist[n].events & EPOLLOUT) if(fe->out) { fe->out(fe); }
-            if(em->evlist[n].events & EPOLLPRI) if(fe->pri) { fe->pri(fe); }
+            if  (    em->evlist[n].events & EPOLLIN    && fe->in)
+                fe->in (fe);
+            else if (em->evlist[n].events & EPOLLOUT   && fe->out)
+                fe->out(fe);
+            else if (em->evlist[n].events & EPOLLPRI   && fe->pri)
+                fe->pri(fe);
+            else if (em->evlist[n].events & EPOLLRDHUP && fe->rdhup)
+                fe->rdhup(fe);
+            else {
+                if(em->evlist[n].events & EPOLLIN )
+                    log_msg("Unhandled EPOLLIN %x fd %d", fe, fe->fd);
+                else if(em->evlist[n].events & EPOLLOUT)
+                    log_msg("Unhandled EPOLLOUT %x fd %d", fe, fe->fd);
+                else if(em->evlist[n].events & EPOLLPRI)
+                    log_msg("Unhandled EPOLLPRI %x fd %d", fe, fe->fd);
+                else if(em->evlist[n].events & EPOLLRDHUP)
+                    log_msg("Unhandled EPOLLRDHUP %x fd %d", fe, fe->fd);
+                else
+                    log_msg("Unhandled events[0x%x] %x fd %d",
+                            em->evlist[n].events, fe, fe->fd);
+            }
         }
+
         if (em->after) em->after(em);
     }
     return (void*)0;
 }
-int em_run(em_t *em)
+int em_run(em_t *em, int n)
 {
-    int ret;
+    pthread_t tid;
     pthread_attr_t attr;
+
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 1024*1024); //set stack size 1M
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     pthread_mutex_lock(&em->lock);
     if (em->run) { 
@@ -197,17 +220,19 @@ int em_run(em_t *em)
     em->run = 1;
     pthread_mutex_unlock(&em->lock);
 
-    if ((ret = pthread_create(&em->tid, &attr, em_thread, em)) != 0) {
-        errno = ret;
-        err_ret("em_run() pthread_create error[%d]", errno);
-        return -1;
+    int i;
+    for (i = 0; i < n; i++) {
+        if ((errno = pthread_create(&tid, &attr, em_thread, em)) != 0) {
+            err_ret("em_run() pthread_create error[%d]", errno);
+            return -1;
+        }
     }
     pthread_attr_destroy(&attr);
     return 0;
 }
-void Em_run(em_t *em)
+void Em_run(em_t *em, int n)
 {
-    if (em_run(em) < 0) exit(1);
+    if (em_run(em, n) < 0) exit(1);
 }
 int em_set_timeout(em_t *em, int timeout)
 {

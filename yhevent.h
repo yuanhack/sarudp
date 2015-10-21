@@ -19,6 +19,7 @@ typedef struct epoll_manager epoll_manager_t, em_t;
 
 typedef void  fe_cb_t(fe_t * fe);
 typedef void  em_cb_t(const em_t * const em);
+typedef void  em_cbn_t(const em_t * const em, int n);
 
 ///////////////////////////////////////////////////////////////////////////////
 #ifndef offsetof
@@ -38,6 +39,9 @@ typedef void  em_cb_t(const em_t * const em);
 #define struct_entry(ptr, type,  member) container_of(ptr, type, member)
 #endif
 
+#ifndef _REENTRANT
+#define _REENTRANT
+#endif
 ///////////////////////////////////////////////////////////////////////////////
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * 
  *  关于fd 在epoll_wait 中返回后的状态
@@ -69,15 +73,13 @@ struct fd_event {
 struct epoll_manager
 {
     pthread_mutex_t     lock;    // safe lock
-    pthread_t           tid;     // epoll thread id
-    em_cb_t *       before;  // epoll_wait before
-    em_cb_t *       event;   // epoll_wait after,Before the event processing
-    em_cb_t *       after;   // After the completion of the event processing
+    em_cb_t *           before;  // epoll_wait before
+    em_cbn_t *          event;   // epoll_wait after,Before the event processing
+    em_cb_t *           after;   // After the completion of the event processing
     int                 run;     // epoll manager thread control
     int                 epfd;    // epoll_wait par1 epfd
     int                 timeout; // epoll_wait par4 timeout
     int                 maxfds;  // epoll_wait par3 maxevents
-    int                 nfds;    // epoll_wait's return value
     struct epoll_event evlist[]; // epoll_wait par2 events
 };
 
@@ -89,17 +91,17 @@ extern "C"
 
 #ifdef __cplusplus
     em_t* em_open(int maxfds, int timeout, 
-            em_cb_t before=0, em_cb_t events=0, em_cb_t after=0);
+            em_cb_t before=0, em_cbn_t events=0, em_cb_t after=0);
     em_t* Em_open(int maxfds, int timeout, 
-            em_cb_t before=0, em_cb_t events=0, em_cb_t after=0);
+            em_cb_t before=0, em_cbn_t events=0, em_cb_t after=0);
 #else
     em_t* em_open(int maxfds, int timeout, em_cb_t before, 
-            em_cb_t events, em_cb_t after);
+            em_cbn_t events, em_cb_t after);
     em_t* Em_open(int maxfds, int timeout, em_cb_t before, 
-            em_cb_t events, em_cb_t after);
+            em_cbn_t events, em_cb_t after);
 #endif
-    void Em_run(em_t *em);
-    int  em_run(em_t *em);
+    void Em_run(em_t *em, int n);
+    int  em_run(em_t *em, int n);
     int  em_set_timeout(em_t *em, int timeout);
 
     // 调用 epoll_ctl 执行 ADD MOD DEL

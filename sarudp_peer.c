@@ -2,7 +2,6 @@
 
 #include "yherror.h"
 #include "yhevent.h"
-#include "yhservice.h"
 #include "yhtime.h"
 #include "yhrbtree.h"
 
@@ -571,7 +570,7 @@ int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t
     pthread_mutex_lock(&emutex);
     if (sugem == 0) {
         sugem = Em_open(100, -1, 0, 0, 0);
-        Em_run(sugem);
+        Em_run(sugem, 1);
 
         struct timeval now;
         gettimeofday(&now, 0);

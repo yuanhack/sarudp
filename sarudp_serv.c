@@ -2,7 +2,6 @@
 
 #include "yherror.h"
 #include "yhevent.h"
-#include "yhservice.h"
 #include "yhtime.h"
 #include "yhrbtree.h"
 
@@ -547,6 +546,11 @@ recvagain:
     goto recvagain;
 }
 
+void epoll_outs(const em_t * const em, int n)
+{
+    log_msg("epoll_wat ret %d", n);
+}
+
 int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthread)
 {
     if (nthread <= 0) {
@@ -602,8 +606,12 @@ int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthr
 
     pthread_mutex_lock(&emutex);
     if (sugem == 0) {
+#ifdef SU_DEBUG_PEER_RECV
+        sugem = Em_open(100, -1, 0, epoll_outs, 0);
+#else
         sugem = Em_open(100, -1, 0, 0, 0);
-        Em_run(sugem);
+#endif
+        Em_run(sugem, nthread / 8 + 1);
 
         struct timeval now;
         gettimeofday(&now, 0);
