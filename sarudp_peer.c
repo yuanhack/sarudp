@@ -520,6 +520,12 @@ int su_peer_create_bind(su_peer_t *psar, int port, const SA *destaddr, socklen_t
                 errno = EINVAL;
                 return -1;
         }
+        int reuse = 1;
+        if (setsockopt(psar->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0) {
+            close(psar->fd);
+            psar->fd = -1;
+            return -1;
+        }
         if (bind(psar->fd, paddr, destlen) < 0) {
             close(psar->fd);
             psar->fd = -1;

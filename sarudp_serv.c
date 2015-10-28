@@ -562,6 +562,12 @@ int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthr
         err_ret("serv %x create failed, socket error", psvr);
         return -1;
     }
+    int reuse = 1;
+    if (setsockopt(psvr->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0) {
+        close(psvr->fd);
+        psvr->fd = -1;
+        return -1;
+    }
     if (bind(psvr->fd, saddr, servlen) < 0) {
         close(psvr->fd);
         psvr->fd = -1;
