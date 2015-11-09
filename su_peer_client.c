@@ -16,36 +16,40 @@ void udpin_ordinary(su_peer_t *psar, char *buff, int len);
 void cli_su_peer_send(FILE *fp, su_peer_t *psar);
 
 // test client reliable
-void cli_su_peer_request(FILE *fp, su_peer_t *psar);
-void cli_su_peer_request_random(su_peer_t *psar);
+void cli_su_peer_request_keyboard_input(FILE *fp, su_peer_t *psar);
+void cli_su_peer_request_random_recv_echo(su_peer_t *psar);
 
 int main(int argc, char **argv)
 {
     su_peer_t sar;
     char ip[256], errinfo[256];
+    int port;
 
     signal(SIGINT, sigint);
-
-    /* Targer address domain parse */
-    if (domain_parse(argv[1], ip, sizeof(ip), errinfo, sizeof(errinfo)) < 0)
-        err_quit("Destination parse failed %s", errinfo);
-    log_msg("Destination %s", ip);
 
     if (argc != 2 && argc != 3)
         err_quit("usage: udpcli <Destination> [Port Default 7]");
 
-#if 0
+    /* Targer address domain parse */
+    if (domain_parse(argv[1], ip, sizeof(ip), errinfo, sizeof(errinfo)) < 0)
+        err_quit("Destination parse failed %s", errinfo);
+    port = argc == 2 ? 7 : atoi(argv[2]);
+    if (port <= 0 || port > 65535)
+        err_quit("Port(1~65535) error: %s", argv[2]);
+    log_msg("Destination %s:%d", ip, port);
+
+#if 1
     struct sockaddr_in servaddr;
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = PF_INET;
-    servaddr.sin_port = htons(argc == 2 ? 7 : atoi(argv[2]));
+    servaddr.sin_port = htons(port);
     Inet_pton(AF_INET, ip, &servaddr.sin_addr);
 #else
     struct sockaddr_in6 servaddr;
     char ip6[INET6_ADDRSTRLEN];
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin6_family = PF_INET6;
-    servaddr.sin6_port = htons(argc == 2 ? 7 : atoi(argv[2]));
+    servaddr.sin6_port = htons(port);
 
     // IPv4 to IPv6
     snprintf(ip6, sizeof(ip6),"::ffff:%s", ip);
@@ -70,8 +74,8 @@ int main(int argc, char **argv)
 
 #if 1
     // send reliable data to target
-    //cli_su_peer_request(stdin, &sar);
-    cli_su_peer_request_random(&sar);
+    cli_su_peer_request_keyboard_input(stdin, &sar);
+    //cli_su_peer_request_random_recv_echo(&sar);
 #else
     // send ordinary data to target
     cli_su_peer_send(stdin, &sar);
@@ -118,7 +122,7 @@ void sigint(int no)
 
 #define MAXLINE     4096    /* max text line length */
 
-void cli_su_peer_request(FILE *fp, su_peer_t *psar)
+void cli_su_peer_request_keyboard_input(FILE *fp, su_peer_t *psar)
 {
     ssize_t	n, ret;
     char sendline[MAXLINE], recvline[MAXLINE + 1];
@@ -144,7 +148,7 @@ void cli_su_peer_request(FILE *fp, su_peer_t *psar)
     } while (1);
 }
 
-void cli_su_peer_request_random(su_peer_t *psar)
+void cli_su_peer_request_random_recv_echo(su_peer_t *psar)
 {
     ssize_t	n, m;
     char	sendline[MAXLINE], recvline[MAXLINE + 1] = {0};
