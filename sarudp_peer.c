@@ -144,13 +144,11 @@ static void *thread_request_handle(void *v)
         pthread_mutex_lock(&psar->lock);
         while ((synnode = psar->synrecvls.next) == &psar->synrecvls) {
             maketimeout_seconds(&abstime, 1);
-            pthread_testcancel();
             ret = pthread_cond_timedwait(&psar->syncond, &psar->lock, &abstime);
             if (!psar->run) {
                 pthread_mutex_unlock(&psar->lock);
                 goto quit;
             }
-            pthread_testcancel();
             if ( ret == ETIMEDOUT ) {
                 pthread_mutex_lock(&psar->cachelock);
                 reliable_ack_unsave(psar);
