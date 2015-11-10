@@ -64,5 +64,6 @@ int  su_peer_getsrcaddr(su_peer_t *psar, SAUN *addr);
 
 int  su_peer_reply(su_peer_t *psar, const void *outbuff, int outbytes);
 int  su_peer_reply_ack(su_peer_t *psar);
+void su_peer_reply_ignore(su_peer_t *psar);
 
 #endif /* __YH_SARUDP_PEER_H__ */

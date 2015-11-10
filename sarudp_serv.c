@@ -60,10 +60,10 @@ static inline int reliable_ack___save (su_serv_t *psvr,
 {
     /* Construct search key */
     rb_key_cache_t key;
-    memcpy(&key.destaddr, &frame->srcaddr, sizeof(SAUN));
-    key.destlen = frame->srclen;
-    key.seq = frame->recvhdr.seq;
-    key.sid = frame->recvhdr.sid;
+    memcpy(&key.destaddr, & frame->srcaddr, sizeof(SAUN));
+    key.destlen           = frame->srclen;
+    key.seq               = frame->recvhdr.seq;
+    key.sid               = frame->recvhdr.sid;
 
     struct rb_node *cachenode;
     cache_t *cache;
@@ -126,6 +126,7 @@ static inline int reliable_ack___save (su_serv_t *psvr,
     errno = ENOKEY;
     return -1;
 }
+
 static inline void reliable_ack_unsave (su_serv_t *psvr)
 {
     time_t nowtime;
@@ -156,6 +157,7 @@ static inline void reliable_ack_unsave (su_serv_t *psvr)
         free(frees);
     }
 }
+
 static inline void su_serv_list_empty(su_serv_t *psvr, struct list *l)
 {
     frames_t *realnode;
@@ -202,6 +204,7 @@ static void *thread_request_handle(void *v)
     su_serv_t *psvr = (su_serv_t*)v;
 
     pthread_t tid __attribute__((unused)) = pthread_self();
+    log_msg("serv %x create thread_request_handle %x success", psvr, tid);
 
     for (;psvr->run;) {
         pthread_mutex_lock(&psvr->lock);
@@ -304,7 +307,7 @@ static void *thread_request_handle(void *v)
                 continue;
             } else {
                 if (reliable_ack___hold(psvr, frame) < 0) {
-                    err_ret("reliable_ack___hold error");
+                    err_ret("serv %x %x reliable_ack___hold error", psvr, tid);
                     pthread_mutex_unlock(&psvr->cachelock);
                     free(frame);
                     continue;
@@ -355,13 +358,13 @@ static int su_serv_thread_install(su_serv_t *psvr, int nthread)
             free(psvr->tids);
             return (-1);
         }
-        log_msg("serv %x create thread[%d] %x success", psvr, n, psvr->tids[n]);
     }
     pthread_attr_destroy(&attr);
     psvr->run  = 1;
     psvr->tnum = nthread;
     return 0;
 }
+
 static int su_serv_thread_uninstall(su_serv_t *psvr)
 {
     int i;
@@ -385,6 +388,7 @@ void su_serv_reliable_request_handle_install(su_serv_t *psvr,
     psvr->reliable_request_handle = reliable_request_handle;
     pthread_mutex_unlock(&psvr->lock);
 }
+
 void su_serv_ordinary_request_handle_install(su_serv_t *psvr,
         cb_su_serv_receiver_t* ordinary_request_handle)
 {
@@ -392,12 +396,14 @@ void su_serv_ordinary_request_handle_install(su_serv_t *psvr,
     psvr->ordinary_request_handle = ordinary_request_handle;
     pthread_mutex_unlock(&psvr->lock);
 }
+
 void su_serv_reliable_request_handle_uninstall(su_serv_t *psvr)
 {
     pthread_mutex_lock(&psvr->lock);
     psvr->reliable_request_handle = 0;
     pthread_mutex_unlock(&psvr->lock);
 }
+
 void su_serv_ordinary_request_handle_uninstall(su_serv_t *psvr)
 {
     pthread_mutex_lock(&psvr->lock);
@@ -515,8 +521,9 @@ recvagain:
                 psvr, frame, r->seq, frame->len);
 #endif
         list_append(&psvr->synrecvls, &frame->node);
+        pthread_mutex_unlock(&psvr->lock);
         pthread_cond_broadcast(&psvr->syncond);
-
+        goto recvagain;
     } else if (act == SU_ACK && type == SU_RELIABLE) {
         if (psvr->ackwaitnum <= 0) {
             pthread_mutex_unlock(&psvr->lock);
@@ -528,8 +535,9 @@ recvagain:
                 psvr, frame, r->seq, frame->len);
 #endif
         list_append(&psvr->ackrecvls, &frame->node);
+        pthread_mutex_unlock(&psvr->lock);
         pthread_cond_broadcast(&psvr->ackcond);
-
+        goto recvagain;
     } else {
         pthread_mutex_unlock(&psvr->lock);
 #ifdef SU_DEBUG_PEER_RECV
@@ -548,7 +556,7 @@ recvagain:
 
 void epoll_outs(const em_t * const em, int n)
 {
-    log_msg("epoll_wat ret %d", n);
+    log_msg("epoll_wait ret %d", n);
 }
 
 int su_serv_create(su_serv_t *psvr, const SA *saddr, socklen_t servlen, int nthread)
@@ -713,6 +721,7 @@ static int su_serv_reply_act(su_serv_t *psvr, const frames_t *frame,
 
     return(outbytes);
 }
+
 static int su_serv_send_act(su_serv_t *psvr, SA *destaddr, socklen_t destlen, const void *outbuff, int outbytes)
 {
     int			n;
@@ -743,6 +752,7 @@ static int su_serv_send_act(su_serv_t *psvr, SA *destaddr, socklen_t destlen, co
 
     return(outbytes);
 }
+
 static int su_cmp_ack_SU_RELIABLE(suhdr_t *syn, suhdr_t *ack)
 {
     if (
@@ -754,6 +764,7 @@ static int su_cmp_ack_SU_RELIABLE(suhdr_t *syn, suhdr_t *ack)
         return 1;
     return 0;
 }
+
 static int su_serv_send_recv_act(su_serv_t *psvr, SA *destaddr, socklen_t destlen,
         const void *outbuff, int outbytes, void *inbuff, int inbytes, int retransmit)
 {
@@ -927,6 +938,34 @@ error_ret:
     return(-1);
 }
 
+void su_serv_reply_ignore_act(su_serv_t *psvr, frames_t* frame)
+{
+    rb_key_cache_t key;
+    memcpy(&key.destaddr, &frame->srcaddr, sizeof(SAUN));
+    key.destlen = frame->srclen;
+    key.seq = frame->recvhdr.seq;
+    key.sid = frame->recvhdr.sid;
+
+    struct rb_node *cachenode;
+    cache_t *frees;
+
+    if ((cachenode = rb_search(&psvr->rbackcache, &key))) {
+        frees = rb_entry(cachenode, cache_t, rbn);
+        list_remove (&frees->frame.node);
+        rb_erase (&frees->rbn, &psvr->rbackcache);
+        free(frees);
+        return;
+    }
+}
+
+void su_serv_reply_ignore(su_serv_t *psvr, frames_t *frame)
+{
+    if (psvr == 0 || frame == 0) { return; }
+    pthread_mutex_lock(&psvr->cachelock);
+    su_serv_reply_ignore_act(psvr, frame);
+    pthread_mutex_unlock(&psvr->cachelock);
+}
+
 int su_serv_reply(su_serv_t *psvr, frames_t *frame, const void *outbuff, int outbytes)
 {
     if (psvr == 0 || frame == 0) { errno = EINVAL; return -1; }
@@ -937,6 +976,7 @@ int su_serv_reply(su_serv_t *psvr, frames_t *frame, const void *outbuff, int out
     { errno = EINVAL; return -1; }
     return su_serv_reply_act(psvr, frame, outbuff, outbytes);
 }
+
 int su_serv_reply_ack(su_serv_t *psvr, frames_t *frame)
 {
     if (psvr == 0 || frame == 0) { errno = EINVAL; return -1; }
