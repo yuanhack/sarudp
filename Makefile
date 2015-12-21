@@ -29,14 +29,14 @@ all:	${PROGS}
 .PHONY: all clean clear cmake remake
 
 su_peer_client: su_peer_client.o sarudp_peer.o sarudp_comm.o rtt.o domain_parse.o wrapfunc.o \
-	yhevent.o yherror.o yharguments.o yhsocket.o yhtime.o yhrbtree.o
+	yhevent.o yherror.o yharguments.o yhtime.o yhrbtree.o
 	${CC} ${CFLAGS} -o $@ $^ ${CLIBS}
 su_peer_server: su_peer_server.o sarudp_peer.o sarudp_comm.o rtt.o domain_parse.o wrapfunc.o \
-	yhevent.o yherror.o yharguments.o yhsocket.o yhtime.o yhrbtree.o yhdaemon.o
+	yhevent.o yherror.o yharguments.o yhtime.o yhrbtree.o yhdaemon.o
 	${CC} ${CFLAGS} -o $@ $^ ${CLIBS}
 
 su_serv_server: su_serv_server.o sarudp_serv.o sarudp_comm.o rtt.o domain_parse.o wrapfunc.o \
-	yhevent.o yherror.o yharguments.o yhsocket.o yhtime.o yhrbtree.o yhdaemon.o
+	yhevent.o yherror.o yharguments.o yhtime.o yhrbtree.o yhdaemon.o
 	${CC} ${CFLAGS} -o $@ $^ ${CLIBS}
 
 clean:
