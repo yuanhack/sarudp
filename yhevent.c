@@ -1,14 +1,14 @@
-#include "yhevent.h" 
+#include "yhevent.h"
 
 static void fe_bind(fe_t *fe, em_t *em, int fd, int type)
 {
-    fe->event.data.ptr  = fe; 
+    fe->event.data.ptr  = fe;
     fe->fd              = fd;
     fe->em              = em;
     fe->heap            = type;
 }
 
-// 栈上的自动变量 fe_t 初始化时候 
+// 栈上的自动变量 fe_t 初始化时候
 //  绑定 em 和 fd, 设置堆标志 heap 为0
 //  这样防止 fe_del 时错误的调用 free
 void fe_init(fe_t *fe, em_t *em, int fd)
@@ -18,7 +18,7 @@ void fe_init(fe_t *fe, em_t *em, int fd)
 
 // 从堆上获取一个 fe_t, 在初始化的时候
 //  绑定 em 和 fd, 设置堆标志 heap 为1
-//  这样保证 fe_del 的时候 free 
+//  这样保证 fe_del 的时候 free
 fe_t * fe_new(em_t *em, int fd)
 {
     fe_t * fe = (fe_t*)calloc(1, sizeof(fe_t));
@@ -64,7 +64,7 @@ void fe_unset(fe_t *fe, int event)
 int fe_em_add(fe_t* fe)
 {
     int ret = epoll_ctl(fe->em->epfd, EPOLL_CTL_ADD, fe->fd, &fe->event);
-    if (ret < 0) 
+    if (ret < 0)
         err_ret("fe_em_add() epoll_ctl %d fd %d error[%d]"
                 , fe->em->epfd, fe->fd, errno);
     return ret;
@@ -72,7 +72,7 @@ int fe_em_add(fe_t* fe)
 int fe_em_mod(fe_t* fe)
 {
     int ret =  epoll_ctl(fe->em->epfd, EPOLL_CTL_MOD, fe->fd, &fe->event);
-    if (ret < 0) 
+    if (ret < 0)
         err_ret("fe_em_mod() epoll_ctl %d fd %d error[%d]"
                 , fe->em->epfd, fe->fd, errno);
     return ret;
@@ -80,7 +80,7 @@ int fe_em_mod(fe_t* fe)
 int fe_em_del(fe_t* fe)
 {
     int ret = epoll_ctl(fe->em->epfd, EPOLL_CTL_DEL, fe->fd, &fe->event);
-    if (ret < 0) 
+    if (ret < 0)
         err_ret("fe_em_del() epoll_ctl %d fd %d error[%d]"
                 , fe->em->epfd, fe->fd, errno);
     return ret;
@@ -100,23 +100,23 @@ void Fe_em_del(fe_t* fe)
 int setfd_nonblock(int fd)
 {
     int status;
-    if ((status = fcntl(fd, F_GETFL)) < 0) { 
-        err_ret("setfd_nonblock() fcntl F_GETFL error[%d]", errno); 
-        return -1; 
+    if ((status = fcntl(fd, F_GETFL)) < 0) {
+        err_ret("setfd_nonblock() fcntl F_GETFL error[%d]", errno);
+        return -1;
     }
     status |= O_NONBLOCK;
-    if (fcntl(fd, F_SETFL, status) < 0) { 
-        err_ret("setfd_nonblock() fcntl F_SETFL error[%d]", errno); 
-        return -1; 
+    if (fcntl(fd, F_SETFL, status) < 0) {
+        err_ret("setfd_nonblock() fcntl F_SETFL error[%d]", errno);
+        return -1;
     }
     return 0;
 }
 int setsock_rcvtimeo(int fd, int second, int microsecond)
 {
-    struct timeval rcv_timeo = {second, microsecond}; 
+    struct timeval rcv_timeo = {second, microsecond};
     if (setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&rcv_timeo,sizeof(rcv_timeo))< 0) {
         err_ret("setsock_rcvtimeo() setsockopt SO_RCVTIMEO error[%d]", errno);
-        return -1; 
+        return -1;
     }
     return 0;
 }
@@ -129,12 +129,12 @@ void Setsock_rcvtimeo(int fd, int second, int microsecond)
     if ( setsock_rcvtimeo(fd, second, microsecond) < 0 ) exit(1);
 }
 /* create epoll manager */
-em_t* em_open(int maxfds, int timeout, 
+em_t* em_open(int maxfds, int timeout,
         em_cb_t before, em_cbn_t events, em_cb_t after)
 {
-    em_t *em = 0; 
+    em_t *em = 0;
     if (maxfds <= 0) { errno = EINVAL; return 0; }
-    em = (em_t*)calloc(1, sizeof(em_t) + 
+    em = (em_t*)calloc(1, sizeof(em_t) +
             (maxfds+1) * sizeof(struct epoll_event));
     if (em == 0) { /*errno =  ENOMEM;*/ return 0; }
     em->timeout = timeout;
@@ -151,11 +151,11 @@ err_out:
     if (em         != 0) { free(em);          }
     return 0;
 }
-em_t* Em_open(int maxfds, int timeout, em_cb_t before, 
+em_t* Em_open(int maxfds, int timeout, em_cb_t before,
         em_cbn_t events, em_cb_t after)
 {
     em_t *em;
-    if ((em = em_open(maxfds, timeout, before, events, after)) == 0) 
+    if ((em = em_open(maxfds, timeout, before, events, after)) == 0)
     { err_ret("Em_open() em_open error[%d]", errno); exit(1); }
     return em;
 }
@@ -213,9 +213,9 @@ int em_run(em_t *em, int n)
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     pthread_mutex_lock(&em->lock);
-    if (em->run) { 
-        pthread_mutex_unlock(&em->lock); 
-        return 0; 
+    if (em->run) {
+        pthread_mutex_unlock(&em->lock);
+        return 0;
     }
     em->run = 1;
     pthread_mutex_unlock(&em->lock);
@@ -247,11 +247,11 @@ int close_all_fd(void)
     struct dirent *entry, _entry;
     int retval, rewind, fd;
     dir = opendir("/dev/fd");
-    if (dir == NULL) 
+    if (dir == NULL)
         return -1;
     rewind = 0;
-    while (1) { 
-        retval = readdir_r(dir, &_entry, &entry); 
+    while (1) {
+        retval = readdir_r(dir, &_entry, &entry);
         if (retval != 0) {
             errno = -retval;
             retval = -1;

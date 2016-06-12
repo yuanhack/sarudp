@@ -35,7 +35,7 @@ typedef void  em_cbn_t(const em_t * const em, int n);
      })
 #endif
 
-#ifndef struct_entry 
+#ifndef struct_entry
 #define struct_entry(ptr, type,  member) container_of(ptr, type, member)
 #endif
 
@@ -43,7 +43,7 @@ typedef void  em_cbn_t(const em_t * const em, int n);
 #define _REENTRANT
 #endif
 ///////////////////////////////////////////////////////////////////////////////
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * 
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *  关于fd 在epoll_wait 中返回后的状态
  *	EPOLLIN ：文件描述符可以读（包括对端SOCKET正常关闭）；
  * 	EPOLLOUT：文件描述符可以写；
@@ -56,11 +56,11 @@ typedef void  em_cbn_t(const em_t * const em, int n);
 // event.events = EPOLLxxx | ...; event.data.ptr = fd_event address;
 struct fd_event {
     int fd;                     // file descriptor
-    struct epoll_event event;   
+    struct epoll_event event;
     em_t                *em;    // epoll manager
     void                *ptr;   // user data ptr, user alloc/free
 
-    unsigned int heap; // heap flag is !0 alloc, stack flag is 0 
+    unsigned int heap; // heap flag is !0 alloc, stack flag is 0
 
     // event callback:
     fe_cb_t * in;
@@ -86,18 +86,18 @@ struct epoll_manager
 
 #ifdef __cplusplus
 extern "C"
-{ 
+{
 #endif
 
 #ifdef __cplusplus
-    em_t* em_open(int maxfds, int timeout, 
+    em_t* em_open(int maxfds, int timeout,
             em_cb_t before=0, em_cbn_t events=0, em_cb_t after=0);
-    em_t* Em_open(int maxfds, int timeout, 
+    em_t* Em_open(int maxfds, int timeout,
             em_cb_t before=0, em_cbn_t events=0, em_cb_t after=0);
 #else
-    em_t* em_open(int maxfds, int timeout, em_cb_t before, 
+    em_t* em_open(int maxfds, int timeout, em_cb_t before,
             em_cbn_t events, em_cb_t after);
-    em_t* Em_open(int maxfds, int timeout, em_cb_t before, 
+    em_t* Em_open(int maxfds, int timeout, em_cb_t before,
             em_cbn_t events, em_cb_t after);
 #endif
     void Em_run(em_t *em, int n);
@@ -136,8 +136,8 @@ extern "C"
 
     void fe_unset(fe_t *fe, int event);
 
-#ifdef __cplusplus 
-} 
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* __YH_YHEPOLL_H__ */
